@@ -1,5 +1,7 @@
 # gnetlark
 
+![logo](img/gnetlark.png)
+
 A fast HTTP server that supports handlers written in Starlark.
 
 Currently not very useful, but more like a technology demonstration.
