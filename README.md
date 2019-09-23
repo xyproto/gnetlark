@@ -55,3 +55,5 @@ def index(status, msg, method, path, date):
 * Version: 0.0.1
 * Author: Alexander F. Rødseth &lt;xyproto@archlinux.org&gt;
 * License: MIT
+
+The authors of the gnet HTTP example are attributed in the LICENSE file. gnet is also licensed under the MIT license.
