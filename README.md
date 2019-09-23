@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/xyproto/gnetlark.svg?branch=master)](https://travis-ci.org/xyproto/gnetlark)
 
-![logo](img/gnetlark.png)
+![logo](img/gnetlark.png | width=128)
 
 A fast HTTP server that supports handlers written in Starlark.
 
