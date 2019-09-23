@@ -27,14 +27,16 @@ type request struct {
 
 func main() {
 	var (
-		port   int
-		colors bool
-		quiet  bool
+		port           int
+		colors         bool
+		quiet          bool
+		sourceFilename string
 	)
 
 	flag.IntVar(&port, "port", 80, "server port")
 	flag.BoolVar(&colors, "colors", true, "enable colors")
 	flag.BoolVar(&quiet, "quiet", false, "no output")
+	flag.StringVar(&sourceFilename, "main", "index.star", "main script")
 
 	flag.Parse()
 
@@ -55,7 +57,7 @@ func main() {
 		leftover, err := parsereq(data, &req)
 		if err != nil {
 			log.Println("Server error: " + err.Error())
-			out = appendresp(to, out, "index.star", "error", "500 Error", err.Error()+"\n", req.method, req.path)
+			out = appendresp(to, out, sourceFilename, "error", "500 Error", err.Error()+"\n", req.method, req.path)
 			action = gnet.Close
 			return
 		} else if len(leftover) == len(data) {
@@ -65,7 +67,7 @@ func main() {
 
 		// handle the request
 		req.remoteAddr = c.RemoteAddr().String()
-		out = appendresp(to, out, "index.star", "index", "200 OK", res, req.method, req.path)
+		out = appendresp(to, out, sourceFilename, "index", "200 OK", res, req.method, req.path)
 		c.ResetBuffer()
 		return
 	}
