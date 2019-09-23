@@ -15,7 +15,11 @@ Simple HTTP server that supports handlers written in Starlark.
 
 ### Installation
 
-One way of building and installing the server:
+Quick installation of the development version, using Go 1.12 or later:
+
+    go get -u github.com/xyproto/gnetlark/cmd/gnetlark
+
+Another way of building and installing the server:
 
     git clone https://github.com/xyproto/gnetlark
     cd gnetlark/cmd/gnetlark
