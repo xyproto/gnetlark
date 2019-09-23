@@ -15,10 +15,10 @@ Simple HTTP server that supports handlers written in Starlark.
 
 ### Installation
 
-One way of building and installing
+One way of building and installing the server:
 
     git clone https://github.com/xyproto/gnetlark
-    cd gnetlark
+    cd gnetlark/cmd/gnetlark
     go build
     sudo install -Dm755 gnetlark /usr/bin/gnetlark
 
@@ -37,13 +37,13 @@ It's also possible to specify a port with `--port` or run it as root (not recomm
 
 ### Screenshot
 
-Screenshot of a page served by [`index.star`](index.star), with the server running on port `7711`:
+Screenshot of a page served by [`index.star`](cmd/gnetlark/index.star), with the server running on port `7711`:
 
 ![screenshot](img/screenshot.png)
 
 ### Example
 
-A short Starlark script for handling requests and outputting "Hello, World!" ([`hello.star`](hello.star)):
+A short Starlark script for handling requests and outputting "Hello, World!" ([`hello.star`](cmd/gnetlark/hello.star)):
 
 ```python
 def index(status, msg, method, path, date):

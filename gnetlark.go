@@ -1,86 +1,29 @@
-package main
+package gnetlark
 
 import (
-	"flag"
-	"fmt"
-	"log"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/panjf2000/gnet"
 	"github.com/xyproto/textoutput"
 	"go.starlark.net/starlark"
 )
 
-var res string
-
+// Request contains fields related to a HTTP request, such as HTTP method
 type Request struct {
-	proto      string
-	method     string
-	path       string
-	query      string
-	head       string
-	body       string
-	remoteAddr string
+	Proto      string
+	Method     string
+	Path       string
+	Query      string
+	Head       string
+	Body       string
+	RemoteAddr string
 }
 
-func main() {
-	var (
-		port           int
-		colors         bool
-		quiet          bool
-		sourceFilename string
-	)
-
-	flag.IntVar(&port, "port", 80, "server port")
-	flag.BoolVar(&colors, "colors", true, "enable colors")
-	flag.BoolVar(&quiet, "quiet", false, "no output")
-	flag.StringVar(&sourceFilename, "main", "index.star", "main script")
-
-	flag.Parse()
-
-	to := textoutput.NewTextOutput(colors, !quiet)
-
-	var events gnet.Events
-	events.Multicore = true
-
-	events.OnInitComplete = func(srv gnet.Server) (action gnet.Action) {
-		log.Printf("HTTP server started on port %d", port)
-		return
-	}
-
-	events.React = func(c gnet.Conn) (out []byte, action gnet.Action) {
-		top, tail := c.ReadPair()
-		data := append(top, tail...)
-		var req Request
-		leftover, err := parsereq(data, &req)
-		if err != nil {
-			log.Println("Server error: " + err.Error())
-			out = appendresp(to, out, sourceFilename, "error", "500 Error", err.Error()+"\n", req.method, req.path)
-			action = gnet.Close
-			return
-		} else if len(leftover) == len(data) {
-			log.Println("Request not ready")
-			return
-		}
-
-		// handle the request
-		req.remoteAddr = c.RemoteAddr().String()
-		out = appendresp(to, out, sourceFilename, "index", "200 OK", res, req.method, req.path)
-		c.ResetBuffer()
-		return
-	}
-	// We at least want the single HTTP address.
-	addrs := []string{fmt.Sprintf("tcp"+"://:%d", port)}
-
-	// Serve forever, but quit with an error if it stops
-	to.ErrExit(gnet.Serve(events, addrs...).Error())
-}
-
-// appendresp will append a valid HTTP response to the provide bytes.
+// Respond will append a valid HTTP response to the provide bytes.
 // The status param should be the code plus text such as "200 OK".
-func appendresp(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName, status, msg, method, path string) []byte {
+func Respond(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName, status, msg, method, path string) []byte {
 	thread := &starlark.Thread{Name: "a thread"}
 	globals, err := starlark.ExecFile(thread, sourceFilename, nil, nil)
 	if err != nil {
@@ -107,10 +50,10 @@ func appendresp(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName
 	return []byte(starString.GoString())
 }
 
-// parsereq is a very simple http request parser. This operation
+// ParseReq is a very simple http request parser. This operation
 // waits for the entire payload to be buffered before returning a
 // valid request.
-func parsereq(data []byte, req *Request) (leftover []byte, err error) {
+func ParseReq(data []byte, req *Request) (leftover []byte, err error) {
 	sdata := string(data)
 	var i, s int
 	var top string
@@ -119,20 +62,20 @@ func parsereq(data []byte, req *Request) (leftover []byte, err error) {
 	// method, path, proto line
 	for ; i < len(sdata); i++ {
 		if sdata[i] == ' ' {
-			req.method = sdata[s:i]
+			req.Method = sdata[s:i]
 			for i, s = i+1, i+1; i < len(sdata); i++ {
 				if sdata[i] == '?' && q == -1 {
 					q = i - s
 				} else if sdata[i] == ' ' {
 					if q != -1 {
-						req.path = sdata[s:q]
-						req.query = req.path[q+1 : i]
+						req.Path = sdata[s:q]
+						req.Query = req.Path[q+1 : i]
 					} else {
-						req.path = sdata[s:i]
+						req.Path = sdata[s:i]
 					}
 					for i, s = i+1, i+1; i < len(sdata); i++ {
 						if sdata[i] == '\n' && sdata[i-1] == '\r' {
-							req.proto = sdata[s:i]
+							req.Proto = sdata[s:i]
 							i, s = i+1, i+1
 							break
 						}
@@ -143,8 +86,8 @@ func parsereq(data []byte, req *Request) (leftover []byte, err error) {
 			break
 		}
 	}
-	if req.proto == "" {
-		return data, fmt.Errorf("malformed request")
+	if req.Proto == "" {
+		return data, errors.New("malformed request")
 	}
 	top = sdata[:s]
 	for ; i < len(sdata); i++ {
@@ -152,13 +95,13 @@ func parsereq(data []byte, req *Request) (leftover []byte, err error) {
 			line := sdata[s : i-1]
 			s = i + 1
 			if line == "" {
-				req.head = sdata[len(top)+2 : i+1]
+				req.Head = sdata[len(top)+2 : i+1]
 				i++
 				if clen > 0 {
 					if len(sdata[i:]) < clen {
 						break
 					}
-					req.body = sdata[i : i+clen]
+					req.Body = sdata[i : i+clen]
 					i += clen
 				}
 				return data[i:], nil
