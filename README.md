@@ -4,7 +4,9 @@
 
 Simple HTTP server that supports handlers written in Starlark.
 
-The functionality available in the Starlark handlers is currently very limited, but it's fast, secure and a possibility to try out the Starlark language.
+The functionality available in the Starlark handlers is currently very limited, but it's fast and secure.
+
+`gnetlark` offers an easy way to try out the Starlark programming language (which is very similar to Python).
 
 ### Installation
 
