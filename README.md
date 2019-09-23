@@ -1,12 +1,17 @@
 # <img src="img/gnetlark.png" width=48 alt="gnetlark logo"> gnetlark
 
-[![Build Status](https://travis-ci.org/xyproto/gnetlark.svg?branch=master)](https://travis-ci.org/xyproto/gnetlark)
+[![Build Status](https://travis-ci.org/xyproto/gnetlark.svg?branch=master)](https://travis-ci.org/xyproto/gnetlark) [![GoDoc](https://godoc.org/github.com/xyproto/gnetlark?status.svg)](http://godoc.org/github.com/xyproto/gnetlark) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/gnetlark)](https://goreportcard.com/report/github.com/xyproto/gnetlark)
 
 Simple HTTP server that supports handlers written in Starlark.
 
-The functionality available in the Starlark handlers is currently very limited, but it's fast and secure.
+### Features and limitations
 
-`gnetlark` offers an easy way to try out the Starlark programming language (which is very similar to Python).
+* It's very fast, due to the excellent performance of [gnet](https://github.com/panjf2000/gnet).
+* Starlark is easy to learn and use. It is very similar to Python.
+* The selection of functions available from Starlark scripts is currently very limited. There is no file or database access.
+* `gnetlark` offers an easy and fun way to try out the Starlark programming language (which is very similar to Python).
+* Support for providing and calling REST/JSON APIs might be added in the future.
+* Serving static files is currently not supported.
 
 ### Installation
 
