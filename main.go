@@ -68,32 +68,37 @@ func main() {
 		c.ResetBuffer()
 		return
 	}
-	// We at least want the single http address.
+	// We at least want the single HTTP address.
 	addrs := []string{fmt.Sprintf("tcp"+"://:%d", port)}
-	// Start serving!
-	log.Fatal(gnet.Serve(events, addrs...))
+
+	// Serve forever, but quit with an error if it stops
+	to.ErrExit(gnet.Serve(events, addrs...).Error())
 }
 
-// appendresp will append a valid http response to the provide bytes.
+// appendresp will append a valid HTTP response to the provide bytes.
 // The status param should be the code plus text such as "200 OK".
 func appendresp(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName, status, msg string) []byte {
 	thread := &starlark.Thread{Name: "a thread"}
 	globals, err := starlark.ExecFile(thread, sourceFilename, nil, nil)
 	if err != nil {
 		to.Err("error: " + err.Error())
+		return []byte{}
 	}
 	handlerFunc, ok := globals[handlerName]
 	if !ok {
 		to.Err("error: could not find function " + to.LightBlue(handlerName) + " in " + to.LightGreen(sourceFilename))
+		return []byte{}
 	}
 	datestring := time.Now().Format("Mon, 02 Jan 2006 15:04:05 GMT")
 	v, err := starlark.Call(thread, handlerFunc, starlark.Tuple{starlark.String(status), starlark.String(msg), starlark.String(datestring)}, nil)
 	if err != nil {
 		to.Err("error: " + err.Error())
+		return []byte{}
 	}
 	starString, ok := v.(starlark.String)
 	if !ok {
 		to.Err("error: " + to.LightBlue(handlerName) + " in " + to.LightGreen(sourceFilename) + " returned something that was not a string")
+		return []byte{}
 	}
 	//log.Println("returning " + starString.GoString())
 	return []byte(starString.GoString())
