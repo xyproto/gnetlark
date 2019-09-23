@@ -15,7 +15,7 @@ import (
 
 var res string
 
-type request struct {
+type Request struct {
 	proto      string
 	method     string
 	path       string
@@ -53,7 +53,7 @@ func main() {
 	events.React = func(c gnet.Conn) (out []byte, action gnet.Action) {
 		top, tail := c.ReadPair()
 		data := append(top, tail...)
-		var req request
+		var req Request
 		leftover, err := parsereq(data, &req)
 		if err != nil {
 			log.Println("Server error: " + err.Error())
@@ -110,7 +110,7 @@ func appendresp(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName
 // parsereq is a very simple http request parser. This operation
 // waits for the entire payload to be buffered before returning a
 // valid request.
-func parsereq(data []byte, req *request) (leftover []byte, err error) {
+func parsereq(data []byte, req *Request) (leftover []byte, err error) {
 	sdata := string(data)
 	var i, s int
 	var top string
