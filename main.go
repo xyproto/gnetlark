@@ -55,7 +55,7 @@ func main() {
 		leftover, err := parsereq(data, &req)
 		if err != nil {
 			log.Println("Server error: " + err.Error())
-			out = appendresp(to, out, "index.star", "error", "500 Error", err.Error()+"\n")
+			out = appendresp(to, out, "index.star", "error", "500 Error", err.Error()+"\n", req.method, req.path)
 			action = gnet.Close
 			return
 		} else if len(leftover) == len(data) {
@@ -65,7 +65,7 @@ func main() {
 
 		// handle the request
 		req.remoteAddr = c.RemoteAddr().String()
-		out = appendresp(to, out, "index.star", "index", "200 OK", res)
+		out = appendresp(to, out, "index.star", "index", "200 OK", res, req.method, req.path)
 		c.ResetBuffer()
 		return
 	}
@@ -78,7 +78,7 @@ func main() {
 
 // appendresp will append a valid HTTP response to the provide bytes.
 // The status param should be the code plus text such as "200 OK".
-func appendresp(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName, status, msg string) []byte {
+func appendresp(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName, status, msg, method, path string) []byte {
 	thread := &starlark.Thread{Name: "a thread"}
 	globals, err := starlark.ExecFile(thread, sourceFilename, nil, nil)
 	if err != nil {
@@ -91,7 +91,7 @@ func appendresp(to *textoutput.TextOutput, b []byte, sourceFilename, handlerName
 		return []byte{}
 	}
 	datestring := time.Now().Format("Mon, 02 Jan 2006 15:04:05 GMT")
-	v, err := starlark.Call(thread, handlerFunc, starlark.Tuple{starlark.String(status), starlark.String(msg), starlark.String(datestring)}, nil)
+	v, err := starlark.Call(thread, handlerFunc, starlark.Tuple{starlark.String(status), starlark.String(msg), starlark.String(method), starlark.String(path), starlark.String(datestring)}, nil)
 	if err != nil {
 		to.Err("error: " + err.Error())
 		return []byte{}
