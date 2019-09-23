@@ -42,6 +42,7 @@ func main() {
 
 	var events gnet.Events
 	events.Multicore = true
+
 	events.OnInitComplete = func(srv gnet.Server) (action gnet.Action) {
 		log.Printf("HTTP server started on port %d", port)
 		return
