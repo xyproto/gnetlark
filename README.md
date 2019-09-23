@@ -2,9 +2,9 @@
 
 [![Build Status](https://travis-ci.org/xyproto/gnetlark.svg?branch=master)](https://travis-ci.org/xyproto/gnetlark)
 
-A fast HTTP server that supports handlers written in Starlark.
+Simple HTTP server that supports handlers written in Starlark.
 
-The functionality available in the Starlark handlers is currently very limited.
+The functionality available in the Starlark handlers is currently very limited, but it's fast, secure and a possibility to try out the Starlark language.
 
 ### Installation
 
