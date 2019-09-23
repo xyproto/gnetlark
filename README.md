@@ -25,12 +25,12 @@ It's also possible to specify a port with `--port` or run it as root (not recomm
 
 ### Depends on
 
-* [gnet](https://github.com/panjf2000/gnet), for serving HTTP
-* [starlark-go](https://github.com/google/starlark-go), for running Starlark scripts
+* [gnet](https://github.com/panjf2000/gnet), for serving HTTP.
+* [starlark-go](https://github.com/google/starlark-go), for running Starlark scripts.
 
 ### Screenshot
 
-Screenshot of a page served by `index.star`, with the server running on port 7711:
+Screenshot of a page served by [`index.star`](index.star), with the server running on port `7711`:
 
 ![screenshot](img/screenshot.png)
 
