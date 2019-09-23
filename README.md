@@ -34,6 +34,15 @@ Screenshot of a page served by [`index.star`](index.star), with the server runni
 
 ![screenshot](img/screenshot.png)
 
+### Example
+
+A short Starlark script for handling requests and outputting "Hello, World!" ([`hello.star`](hello.star)):
+
+```python
+def index(status, msg, method, path, date):
+    return "HTTP/1.1 " + status + "\r\nServer: gnetlark\r\nDate: " + date + "\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + "Hello, World!"
+```
+
 ## General info
 
 * Version: 0.0.1
