@@ -54,9 +54,13 @@ def index(status, msg, method, path, date):
     return "HTTP/1.1 " + status + "\r\nServer: gnetlark\r\nDate: " + date + "\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + "Hello, World!"
 ```
 
+The "Hello World" page can be served by a command like this:
+
+    ./gnetlark -main hello.star -port 7711
+
 ## General info
 
-* Version: 0.0.1
+* Version: 1.0.0
 * Author: Alexander F. Rødseth &lt;xyproto@archlinux.org&gt;
 * License: MIT
 

@@ -8,6 +8,7 @@ import (
 	"github.com/panjf2000/gnet"
 	"github.com/xyproto/gnetlark"
 	"github.com/xyproto/textoutput"
+	"github.com/xyproto/vt100"
 )
 
 var res string
@@ -18,16 +19,23 @@ func main() {
 		colors         bool
 		quiet          bool
 		sourceFilename string
+		version        bool
 	)
 
 	flag.IntVar(&port, "port", 80, "server port")
 	flag.BoolVar(&colors, "colors", true, "enable colors")
 	flag.BoolVar(&quiet, "quiet", false, "no output")
 	flag.StringVar(&sourceFilename, "main", "index.star", "main script")
+	flag.BoolVar(&version, "version", false, "show version and quit")
 
 	flag.Parse()
 
 	to := textoutput.NewTextOutput(colors, !quiet)
+
+	if version {
+		to.OutputTags(vt100.BackgroundRed.String() + "gnetlark<off> <white>1.0.0<off>")
+		return
+	}
 
 	var events gnet.Events
 	events.Multicore = true
