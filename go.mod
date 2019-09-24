@@ -7,5 +7,5 @@ require (
 	github.com/xyproto/textoutput v1.7.0
 	github.com/xyproto/vt100 v1.4.0
 	go.starlark.net v0.0.0-20190919145610-979af19b165c
-	golang.org/x/sys v0.0.0-20190922100055-0a153f010e69 // indirect
+	golang.org/x/sys v0.0.0-20190924062700-2aa67d56cdd7 // indirect
 )
