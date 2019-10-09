@@ -4,6 +4,8 @@
 
 Simple HTTP server that supports handlers written in Starlark.
 
+Pronounced as "jetlark", just to keep people on their toes.
+
 ### Features and limitations
 
 * It's very fast, due to the excellent performance of [gnet](https://github.com/panjf2000/gnet).
