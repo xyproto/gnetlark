@@ -11,7 +11,7 @@ Pronounced as "jetlark", just to keep people on their toes.
 * It's very fast, due to the excellent performance of [gnet](https://github.com/panjf2000/gnet).
 * Starlark is easy to learn and use. It is very similar to Python.
 * The selection of functions available from Starlark scripts is currently very limited. There is no file or database access.
-* `gnetlark` offers an easy and fun way to try out the Starlark programming language (which is very similar to Python).
+* `gnetlark` offers an easy and fun way to try out the Starlark programming language.
 * Support for providing and calling REST/JSON APIs might be added in the future.
 * Serving static files is currently not supported.
 
