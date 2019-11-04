@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/xyproto/gnetlark.svg?branch=master)](https://travis-ci.org/xyproto/gnetlark) [![GoDoc](https://godoc.org/github.com/xyproto/gnetlark?status.svg)](http://godoc.org/github.com/xyproto/gnetlark) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/gnetlark)](https://goreportcard.com/report/github.com/xyproto/gnetlark)
 
-Simple HTTP server that supports handlers written in Starlark.
+Fast HTTP server that supports handlers written in Starlark.
 
 Pronounced as "jetlark", just to keep people on their toes.
 
