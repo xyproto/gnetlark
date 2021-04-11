@@ -13,7 +13,7 @@ Pronounced as "jetlark", just to keep people on their toes.
 * The selection of functions available from Starlark scripts is currently very limited. There is no file or database access.
 * `gnetlark` offers an easy and fun way to try out the Starlark programming language.
 * Support for providing and calling REST/JSON APIs might be added in the future.
-* Serving static files is currently not supported.
+* Serving static files is currently not supported, unless you embed them.
 
 ### Installation
 
