@@ -67,7 +67,6 @@ def index(status, msg, method, path, date):
     if bodylen > 0:
         retval += "Content-Length: " + str(bodylen) + "\r\n"
         retval += "\r\n"
-
         retval += body
 
     return retval
@@ -77,11 +76,14 @@ def error(status, msg, method, path, date):
     retval += "Server: gnetlark\r\n"
     retval += "Date: " + date + "\r\n"
     body = ""
+
     if len(msg) > 0:
       body += "Server error: " + msg + "\n"
+
     bodylen = len(body)
     if bodylen > 0:
       retval += "Content-Length: " + str(bodylen) + "\r\n"
       retval += "\r\n"
       retval += body
+
     return retval
