@@ -47,6 +47,10 @@ Screenshot of a page served by [`index.star`](cmd/gnetlark/index.star), with the
 
 ![screenshot](img/screenshot.png)
 
+Served in 0ms:
+
+![performance](img/performance.png)
+
 ### Example
 
 A short Starlark script for handling requests and outputting "Hello, World!" ([`hello.star`](cmd/gnetlark/hello.star)):
