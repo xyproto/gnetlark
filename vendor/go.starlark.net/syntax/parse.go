@@ -28,7 +28,7 @@ const (
 // If src != nil, ParseFile parses the source from src and the filename
 // is only used when recording position information.
 // The type of the argument for the src parameter must be string,
-// []byte, or io.Reader.
+// []byte, io.Reader, or FilePortion.
 // If src == nil, ParseFile parses the file specified by filename.
 func Parse(filename string, src interface{}, mode Mode) (f *File, err error) {
 	in, err := newScanner(filename, src, mode&RetainComments != 0)
@@ -414,7 +414,7 @@ func (p *parser) consume(t Token) Position {
 	return p.nextToken()
 }
 
-// params = (param COMMA)* param
+// params = (param COMMA)* param COMMA?
 //        |
 //
 // param = IDENT
@@ -432,22 +432,16 @@ func (p *parser) consume(t Token) Position {
 //      *Unary{Op: STARSTAR, X: *Ident}                 **kwargs
 func (p *parser) parseParams() []Expr {
 	var params []Expr
-	stars := false
 	for p.tok != RPAREN && p.tok != COLON && p.tok != EOF {
 		if len(params) > 0 {
 			p.consume(COMMA)
 		}
 		if p.tok == RPAREN {
-			// list can end with a COMMA if there is neither * nor **
-			if stars {
-				p.in.errorf(p.in.pos, "got %#v, want parameter", p.tok)
-			}
 			break
 		}
 
 		// * or *args or **kwargs
 		if p.tok == STAR || p.tok == STARSTAR {
-			stars = true
 			op := p.tok
 			pos := p.nextToken()
 			var x Expr
@@ -730,22 +724,16 @@ func (p *parser) parseCallSuffix(fn Expr) Expr {
 // arg_list = ((arg COMMA)* arg COMMA?)?
 func (p *parser) parseArgs() []Expr {
 	var args []Expr
-	stars := false
 	for p.tok != RPAREN && p.tok != EOF {
 		if len(args) > 0 {
 			p.consume(COMMA)
 		}
 		if p.tok == RPAREN {
-			// list can end with a COMMA if there is neither * nor **
-			if stars {
-				p.in.errorf(p.in.pos, `got %#v, want argument`, p.tok)
-			}
 			break
 		}
 
 		// *args or **kwargs
 		if p.tok == STAR || p.tok == STARSTAR {
-			stars = true
 			op := p.tok
 			pos := p.nextToken()
 			x := p.parseTest()
@@ -783,8 +771,7 @@ func (p *parser) parseArgs() []Expr {
 }
 
 //  primary = IDENT
-//          | INT | FLOAT
-//          | STRING
+//          | INT | FLOAT | STRING | BYTES
 //          | '[' ...                    // list literal or comprehension
 //          | '{' ...                    // dict literal or comprehension
 //          | '(' ...                    // tuple or parenthesized expression
@@ -794,7 +781,7 @@ func (p *parser) parsePrimary() Expr {
 	case IDENT:
 		return p.parseIdent()
 
-	case INT, FLOAT, STRING:
+	case INT, FLOAT, STRING, BYTES:
 		var val interface{}
 		tok := p.tok
 		switch tok {
@@ -806,7 +793,7 @@ func (p *parser) parsePrimary() Expr {
 			}
 		case FLOAT:
 			val = p.tokval.float
-		case STRING:
+		case STRING, BYTES:
 			val = p.tokval.string
 		}
 		raw := p.tokval.raw

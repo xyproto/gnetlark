@@ -1,12 +1,16 @@
+// +build !windows
+
 // Package textoutput offers a simple way to use vt100 and output colored text
 package textoutput
 
 import (
 	"fmt"
-	"github.com/xyproto/vt100"
+	"io"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/xyproto/vt100"
 )
 
 // CharAttribute is a rune and a color attribute
@@ -24,7 +28,26 @@ type TextOutput struct {
 	darkReplacer  *strings.Replacer
 }
 
+// New creates a new TextOutput struct, which is
+// enabled by default and with colors turned on.
+// If the NO_COLOR environment variable is set, colors are disabled.
+func New() *TextOutput {
+	// Respect the NO_COLOR environment variable
+	color := len(os.Getenv("NO_COLOR")) == 0
+	o := &TextOutput{color, true, nil, nil}
+	o.initializeTagReplacers()
+	return o
+}
+
+// NewTextOutput can initialize a new TextOutput struct,
+// which can have colors turned on or off and where the
+// output can be enabled (verbose) or disabled (silent).
+// If NO_COLOR is set, colors are disabled, regardless.
 func NewTextOutput(color, enabled bool) *TextOutput {
+	// Respect the NO_COLOR environment variable
+	if os.Getenv("NO_COLOR") != "" {
+		color = false
+	}
 	o := &TextOutput{color, enabled, nil, nil}
 	o.initializeTagReplacers()
 	return o
@@ -51,14 +74,83 @@ func (o *TextOutput) OutputWords(line string, colors ...string) {
 // Write a message to stdout if output is enabled
 func (o *TextOutput) Println(msg ...interface{}) {
 	if o.enabled {
-		fmt.Println(msg...)
+		fmt.Println(o.InterfaceTags(msg...))
+	}
+}
+
+// Write a message to the given io.Writer if output is enabled
+func (o *TextOutput) Fprintln(w io.Writer, msg ...interface{}) {
+	if o.enabled {
+		fmt.Fprintln(w, o.InterfaceTags(msg...))
+	}
+}
+
+// Write a message to stdout if output is enabled
+func (o *TextOutput) Printf(msg ...interface{}) {
+	if !o.enabled {
+		return
+	}
+	count := len(msg)
+	if count == 0 {
+		return
+	} else if count == 1 {
+		if fmtString, ok := msg[0].(string); ok {
+			fmt.Print(fmtString)
+		}
+	} else { // > 1
+		if fmtString, ok := msg[0].(string); ok {
+			fmt.Printf(o.InterfaceTags(fmtString), msg[1:]...)
+		} else {
+			// fail
+			fmt.Printf("%v", msg...)
+		}
+	}
+}
+
+// Write a message to the given io.Writer if output is enabled
+func (o *TextOutput) Fprintf(w io.Writer, msg ...interface{}) {
+	if !o.enabled {
+		return
+	}
+	count := len(msg)
+	if count == 0 {
+		return
+	} else if count == 1 {
+		if fmtString, ok := msg[0].(string); ok {
+			fmt.Fprint(w, fmtString)
+		}
+	} else { // > 1
+		if fmtString, ok := msg[0].(string); ok {
+			fmt.Fprintf(w, o.InterfaceTags(fmtString), msg[1:]...)
+		} else {
+			// fail
+			fmt.Fprintf(w, "%v", msg...)
+		}
+	}
+}
+
+// Write a message to stdout if output is enabled
+func (o *TextOutput) Print(msg ...interface{}) {
+	if o.enabled {
+		fmt.Print(o.InterfaceTags(msg...))
+	}
+}
+
+// Write a message to the given io.Writer if output is enabled
+func (o *TextOutput) Fprint(w io.Writer, msg ...interface{}) {
+	if o.enabled {
+		fmt.Fprint(w, o.InterfaceTags(msg...))
 	}
 }
 
 // Write an error message in red to stderr if output is enabled
 func (o *TextOutput) Err(msg string) {
 	if o.enabled {
-		vt100.Red.Error(msg)
+		if o.color {
+			vt100.Red.Error(msg)
+		} else {
+			vt100.Default.Error(msg)
+		}
 	}
 }
 
@@ -68,9 +160,19 @@ func (o *TextOutput) ErrExit(msg string) {
 	os.Exit(1)
 }
 
-// Checks if textual output is enabled
+// Deprectated
 func (o *TextOutput) IsEnabled() bool {
 	return o.enabled
+}
+
+// Enabled returns true if any output is enabled
+func (o *TextOutput) Enabled() bool {
+	return o.enabled
+}
+
+// Disabled returns true if all output is disabled
+func (o *TextOutput) Disabled() bool {
+	return !o.enabled
 }
 
 func (o *TextOutput) DarkRed(s string) string {
@@ -208,6 +310,19 @@ func (o *TextOutput) Tags(colors ...string) string {
 	return o.LightTags(colors...)
 }
 
+// InterfaceTags is the same as LightTags, but with interfaces
+func (o *TextOutput) InterfaceTags(colors ...interface{}) string {
+	var sb strings.Builder
+	for _, color := range colors {
+		if colorString, ok := color.(string); ok {
+			sb.WriteString(colorString)
+		} else {
+			sb.WriteString(fmt.Sprintf("%s", color))
+		}
+	}
+	return o.LightTags(sb.String())
+}
+
 // Replace <blue> with starting a light blue color attribute and <off> with using the default attributes.
 // </blue> can also be used for using the default attributes.
 func (o *TextOutput) DarkTags(colors ...string) string {
@@ -304,16 +419,17 @@ func (o *TextOutput) initializeTagReplacers() {
 // Pair takes a string with ANSI codes and returns
 // a slice with two elements.
 func (o *TextOutput) Extract(s string) []CharAttribute {
-	escaped := false
-	var colorcode strings.Builder
-	var word strings.Builder
-	cc := make([]CharAttribute, 0)
-	var currentColor vt100.AttributeColor
+	var (
+		escaped      bool
+		colorcode    strings.Builder
+		word         strings.Builder
+		cc           = make([]CharAttribute, 0, len(s))
+		currentColor vt100.AttributeColor
+	)
 	for _, r := range s {
 		if r == '\033' {
 			escaped = true
-			w := word.String()
-			if w != "" {
+			if len(word.String()) > 0 {
 				//fmt.Println("cc", cc)
 				word.Reset()
 			}
@@ -323,11 +439,8 @@ func (o *TextOutput) Extract(s string) []CharAttribute {
 			if r != 'm' {
 				colorcode.WriteRune(r)
 			} else if r == 'm' {
-				s := colorcode.String()
-				if strings.HasPrefix(s, "[") {
-					s = s[1:]
-				}
-				attributeStrings := strings.Split(s, ";")
+				s2 := strings.TrimPrefix(colorcode.String(), "[")
+				attributeStrings := strings.Split(s2, ";")
 				if len(attributeStrings) == 1 && attributeStrings[0] == "0" {
 					currentColor = []byte{}
 				}

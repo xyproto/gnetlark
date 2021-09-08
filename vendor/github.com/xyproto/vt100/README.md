@@ -1,14 +1,18 @@
 # VT100
 
-[![Build Status](https://travis-ci.org/xyproto/vt100.svg?branch=master)](https://travis-ci.org/xyproto/vt100) [![GoDoc](https://godoc.org/github.com/xyproto/vt100?status.svg)](https://godoc.org/github.com/xyproto/vt100) [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat)](https://raw.githubusercontent.com/xyproto/vt100/master/LICENSE) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/vt100)](https://goreportcard.com/report/github.com/xyproto/vt100)
+[![Build Status](https://travis-ci.com/xyproto/vt100.svg?branch=master)](https://travis-ci.com/xyproto/vt100) [![GoDoc](https://godoc.org/github.com/xyproto/vt100?status.svg)](https://godoc.org/github.com/xyproto/vt100) [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat)](https://raw.githubusercontent.com/xyproto/vt100/master/LICENSE) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/vt100)](https://goreportcard.com/report/github.com/xyproto/vt100)
 
 * Supports colors and attributes.
-* Developed for Linux. May work on other systems, but there are no guarantees.
+* Supports platforms with VT100 support and a `/dev/tty` device.
 * Can detect the terminal size.
 * Can get key-presses, including arrow keys (252, 253, 254, 255).
 * Has a Canvas struct, for drawing only the updated lines to the terminal.
 * Uses the spec directly, but memoizes the commands sent to the terminal, for speed.
 * Could be used for building a better `dialog` or `whiptail` utility.
+
+### Editor
+
+For an editor that uses this module, take a look at [o](https://github.com/xyproto/o).
 
 ### Images
 
@@ -66,12 +70,12 @@ See `cmd/move` for a more advanced example, where a character can be moved aroun
 
 ### A small editor using `vt100`
 
-The `o` editor that uses `vt100` can be used for editing Go or C++ code, or for creating ASCII graphics. Quick installation:
+The `o` editor that uses `vt100` can be used for editing ie. Go, Bash or C++ code. Quick installation:
 
     go get -u github.com/xyproto/o
 
 ### General info
 
-* Version: 1.5.0
-* Licence: MIT
+* Version: 1.9.5
+* Licence: BSD
 * Author: Alexander F. Rødseth &lt;xyproto@archlinux.org&gt;
