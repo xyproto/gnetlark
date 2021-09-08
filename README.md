@@ -64,6 +64,10 @@ The "Hello World" page can be served by a command like this:
 
     ./gnetlark -main hello.star -port 7711
 
+## See also
+
+* [ghttp](https://github.com/komorebi8/ghttp) for a Go package that provides a `ListenAndServe` function that uses `gnet`.
+
 ## General info
 
 * Version: 1.0.0
