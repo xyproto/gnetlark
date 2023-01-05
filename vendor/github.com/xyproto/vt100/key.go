@@ -1,6 +1,11 @@
+//go:build !windows
+// +build !windows
+
 package vt100
 
 import (
+	"errors"
+	"io/ioutil"
 	"strconv"
 	"time"
 	"unicode"
@@ -216,7 +221,7 @@ func KeyOnce() int {
 	return ascii
 }
 
-// Wait for Esc, Enter or Space to be pressed
+// Wait for Return, Esc, Space or q to be pressed
 func WaitForKey() {
 	// Get a new TTY and start reading keypresses in a loop
 	r, err := NewTTY()
@@ -227,7 +232,7 @@ func WaitForKey() {
 	//r.SetTimeout(10 * time.Millisecond)
 	for {
 		switch r.Key() {
-		case 27, 13, 32:
+		case 13, 27, 32, 113:
 			r.Close()
 			return
 		}
@@ -318,4 +323,25 @@ func (tty *TTY) Rune() rune {
 		return []rune(string(bytes))[0]
 	}
 	return rune(0)
+}
+
+// Write a string to the TTY
+func (tty *TTY) WriteString(s string) error {
+	n, err := tty.t.Write([]byte(s))
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("no bytes written to the TTY")
+	}
+	return nil
+}
+
+// Read a string from the TTY
+func (tty *TTY) ReadString() (string, error) {
+	b, err := ioutil.ReadAll(tty.t)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }

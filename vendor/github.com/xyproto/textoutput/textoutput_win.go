@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 // Package textoutput offers a simple way to use vt100 and output colored text
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mgutz/ansi"
+	"github.com/xyproto/env"
 )
 
 // CharAttribute is a rune and a color attribute
@@ -27,13 +29,14 @@ type TextOutput struct {
 	darkReplacer  *strings.Replacer
 }
 
+// Respect the NO_COLOR environment variable
+var EnvNoColor = env.Bool("NO_COLOR")
+
 // New creates a new TextOutput struct, which is
 // enabled by default and with colors turned on.
 // If the NO_COLOR environment variable is set, colors are disabled.
 func New() *TextOutput {
-	// Respect the NO_COLOR environment variable
-	color := len(os.Getenv("NO_COLOR")) == 0
-	o := &TextOutput{color, true, nil, nil}
+	o := &TextOutput{!EnvNoColor, true, nil, nil}
 	o.initializeTagReplacers()
 	return o
 }
@@ -43,8 +46,7 @@ func New() *TextOutput {
 // output can be enabled (verbose) or disabled (silent).
 // If NO_COLOR is set, colors are disabled, regardless.
 func NewTextOutput(color, enabled bool) *TextOutput {
-	// Respect the NO_COLOR environment variable
-	if os.Getenv("NO_COLOR") != "" {
+	if EnvNoColor {
 		color = false
 	}
 	o := &TextOutput{color, enabled, nil, nil}
