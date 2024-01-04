@@ -8,18 +8,18 @@ Pronounced as "jetlark", just to keep people on their toes.
 
 ### Features and limitations
 
-* It's very fast, due to the excellent performance of [gnet](https://github.com/panjf2000/gnet).
-* Starlark is easy to learn and use. It is very similar to Python.
-* The selection of functions available from Starlark scripts is currently very limited. There is no file or database access.
+* It's fast, due to the excellent performance of [gnet](https://github.com/panjf2000/gnet).
+* Starlark is easy to learn and use. It is similar to Python.
+* The selection of functions available from Starlark scripts is currently a bit limited. There is no file or database access.
 * `gnetlark` offers an easy and fun way to try out the Starlark programming language.
 * Support for providing and calling REST/JSON APIs might be added in the future.
 * Serving static files is currently not supported, unless you embed them.
 
 ### Installation
 
-Quick installation of the development version, using Go 1.12 or later:
+Quick installation of the development version, using Go 1.17 or later:
 
-    go get -u github.com/xyproto/gnetlark/cmd/gnetlark
+    go install github.com/xyproto/gnetlark/cmd/gnetlark@latest
 
 Another way of building and installing the server:
 
@@ -62,16 +62,10 @@ def index(status, msg, method, path, date):
 
 The "Hello World" page can be served by a command like this:
 
-    ./gnetlark -main hello.star -port 7711
-
-## See also
-
-* [ghttp](https://github.com/komorebi8/ghttp) for a Go package that provides a `ListenAndServe` function that uses `gnet`.
+    gnetlark -main hello.star -port 7711
 
 ## General info
 
-* Version: 1.0.0
+* Version: 1.0.1
 * Author: Alexander F. Rødseth &lt;xyproto@archlinux.org&gt;
-* License: MIT
-
-The authors of the gnet HTTP example are attributed in the LICENSE file. gnet is also licensed under the MIT license.
+* License: BSD-3
