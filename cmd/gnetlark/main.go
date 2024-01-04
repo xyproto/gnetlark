@@ -22,7 +22,7 @@ type httpServer struct {
 }
 
 func (hs *httpServer) OnBoot(_ gnet.Engine) gnet.Action {
-	hs.to.OutputTags(fmt.Sprintf("<lightgreen>HTTP server is listening on port %d<off>\n", hs.port))
+	hs.to.OutputTags(fmt.Sprintf("<lightgreen>Listening for HTTP requests on port %d<off>", hs.port))
 	return gnet.None
 }
 
@@ -65,7 +65,7 @@ func main() {
 		sourceFilename string
 	)
 
-	flag.IntVar(&port, "port", 80, "server port")
+	flag.IntVar(&port, "port", 8080, "server port")
 	flag.BoolVar(&multicore, "multicore", true, "multicore")
 	flag.StringVar(&sourceFilename, "main", "index.star", "main script")
 	flag.Parse()
@@ -80,6 +80,6 @@ func main() {
 	}
 
 	addr := fmt.Sprintf("tcp://:%d", port)
-	to.OutputTags("<lightyellow>Server starting...<off>")
+	to.OutputTags("<white>gnetlark 1.0.1<off>")
 	log.Println("Server exits:", gnet.Run(hs, addr, gnet.WithMulticore(multicore)))
 }
