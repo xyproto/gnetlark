@@ -1,40 +1,80 @@
-# github.com/gobwas/pool v0.2.0
-github.com/gobwas/pool
-github.com/gobwas/pool/internal/pmath
-github.com/gobwas/pool/pbytes
-# github.com/libp2p/go-reuseport v0.0.1
-github.com/libp2p/go-reuseport
 # github.com/mattn/go-colorable v0.1.13
+## explicit; go 1.15
 github.com/mattn/go-colorable
-# github.com/mattn/go-isatty v0.0.17
+# github.com/mattn/go-isatty v0.0.20
+## explicit; go 1.15
 github.com/mattn/go-isatty
 # github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d
+## explicit
 github.com/mgutz/ansi
-# github.com/panjf2000/gnet v0.1.2-0.20190923074112-dd00ef7a6565
-github.com/panjf2000/gnet
-github.com/panjf2000/gnet/internal
-github.com/panjf2000/gnet/netpoll
-github.com/panjf2000/gnet/ringbuffer
-# github.com/pkg/errors v0.8.1
-github.com/pkg/errors
+# github.com/nathan-fiscaletti/consolesize-go v0.0.0-20220204101620-317176b6684d
+## explicit
+github.com/nathan-fiscaletti/consolesize-go
+# github.com/panjf2000/gnet/v2 v2.3.3
+## explicit; go 1.17
+github.com/panjf2000/gnet/v2
+github.com/panjf2000/gnet/v2/internal/bs
+github.com/panjf2000/gnet/v2/internal/gfd
+github.com/panjf2000/gnet/v2/internal/io
+github.com/panjf2000/gnet/v2/internal/math
+github.com/panjf2000/gnet/v2/internal/netpoll
+github.com/panjf2000/gnet/v2/internal/queue
+github.com/panjf2000/gnet/v2/internal/socket
+github.com/panjf2000/gnet/v2/pkg/buffer/elastic
+github.com/panjf2000/gnet/v2/pkg/buffer/linkedlist
+github.com/panjf2000/gnet/v2/pkg/buffer/ring
+github.com/panjf2000/gnet/v2/pkg/errors
+github.com/panjf2000/gnet/v2/pkg/logging
+github.com/panjf2000/gnet/v2/pkg/pool/bytebuffer
+github.com/panjf2000/gnet/v2/pkg/pool/byteslice
+github.com/panjf2000/gnet/v2/pkg/pool/ringbuffer
 # github.com/pkg/term v1.2.0-beta.2.0.20210419004637-f749b98bd0ba
+## explicit; go 1.14
 github.com/pkg/term
 github.com/pkg/term/termios
-# github.com/smartystreets-prototypes/go-disruptor v0.0.0-20180723194425-e0f8f9247cc2
-github.com/smartystreets-prototypes/go-disruptor
-# github.com/xyproto/env v1.8.0
-github.com/xyproto/env
-# github.com/xyproto/textoutput v1.14.1
+# github.com/valyala/bytebufferpool v1.0.0
+## explicit
+github.com/valyala/bytebufferpool
+# github.com/xyproto/burnfont v1.2.3
+## explicit; go 1.9
+github.com/xyproto/burnfont
+# github.com/xyproto/env/v2 v2.2.5
+## explicit; go 1.19
+github.com/xyproto/env/v2
+# github.com/xyproto/textoutput v1.16.2
+## explicit; go 1.17
 github.com/xyproto/textoutput
-# github.com/xyproto/vt100 v1.11.3
+# github.com/xyproto/vt100 v1.14.2
+## explicit; go 1.17
 github.com/xyproto/vt100
-# go.starlark.net v0.0.0-20230103143115-09991d3a103e
+# go.starlark.net v0.0.0-20231121155337-90ade8b19d09
+## explicit; go 1.18
 go.starlark.net/internal/compile
 go.starlark.net/internal/spell
 go.starlark.net/resolve
 go.starlark.net/starlark
 go.starlark.net/syntax
-# golang.org/x/sys v0.4.0
-golang.org/x/sys/internal/unsafeheader
+# go.uber.org/multierr v1.11.0
+## explicit; go 1.19
+go.uber.org/multierr
+# go.uber.org/zap v1.26.0
+## explicit; go 1.19
+go.uber.org/zap
+go.uber.org/zap/buffer
+go.uber.org/zap/internal
+go.uber.org/zap/internal/bufferpool
+go.uber.org/zap/internal/color
+go.uber.org/zap/internal/exit
+go.uber.org/zap/internal/pool
+go.uber.org/zap/internal/stacktrace
+go.uber.org/zap/zapcore
+# golang.org/x/sync v0.3.0
+## explicit; go 1.17
+golang.org/x/sync/errgroup
+# golang.org/x/sys v0.15.0
+## explicit; go 1.18
 golang.org/x/sys/unix
 golang.org/x/sys/windows
+# gopkg.in/natefinch/lumberjack.v2 v2.2.1
+## explicit; go 1.13
+gopkg.in/natefinch/lumberjack.v2
