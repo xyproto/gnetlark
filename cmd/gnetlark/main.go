@@ -5,70 +5,81 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/panjf2000/gnet"
+	"github.com/panjf2000/gnet/v2"
 	"github.com/xyproto/gnetlark"
 	"github.com/xyproto/textoutput"
-	"github.com/xyproto/vt100"
 )
 
 var res string
 
+type httpServer struct {
+	gnet.BuiltinEventEngine
+
+	port           int
+	multicore      bool
+	to             *textoutput.TextOutput
+	sourceFilename string
+}
+
+func (hs *httpServer) OnBoot(_ gnet.Engine) gnet.Action {
+	hs.to.OutputTags(fmt.Sprintf("<lightgreen>HTTP server is listening on port %d<off>\n", hs.port))
+	return gnet.None
+}
+
+func (hs *httpServer) OnOpen(_ gnet.Conn) ([]byte, gnet.Action) {
+	return nil, gnet.None
+}
+
+func (hs *httpServer) OnTraffic(c gnet.Conn) gnet.Action {
+	buffer := make([]byte, 1024) // Adjust the buffer size as needed
+	n, err := c.Read(buffer)
+	if err != nil {
+		hs.to.OutputTags("<red>Error reading data:</red> " + err.Error())
+		return gnet.Close
+	}
+
+	data := buffer[:n]
+
+	var req gnetlark.Request
+	leftover, err := gnetlark.ParseReq(data, &req)
+	if err != nil {
+		hs.to.OutputTags("<red>Server error:</red> " + err.Error())
+		responseBytes := gnetlark.Respond(hs.to, nil, hs.sourceFilename, "error", "500 Error", err.Error()+"\n", req.Method, req.Path)
+		c.Write(responseBytes)
+		return gnet.Close
+	} else if len(leftover) == len(data) {
+		hs.to.OutputTags("<yellow>Request not ready<off>")
+		return gnet.None
+	}
+
+	req.RemoteAddr = c.RemoteAddr().String()
+	responseBytes := gnetlark.Respond(hs.to, nil, hs.sourceFilename, "index", "200 OK", res, req.Method, req.Path)
+	c.Write(responseBytes)
+	return gnet.None
+}
+
 func main() {
 	var (
 		port           int
-		colors         bool
-		quiet          bool
+		multicore      bool
 		sourceFilename string
-		version        bool
 	)
 
 	flag.IntVar(&port, "port", 80, "server port")
-	flag.BoolVar(&colors, "colors", true, "enable colors")
-	flag.BoolVar(&quiet, "quiet", false, "no output")
+	flag.BoolVar(&multicore, "multicore", true, "multicore")
 	flag.StringVar(&sourceFilename, "main", "index.star", "main script")
-	flag.BoolVar(&version, "version", false, "show version and quit")
-
 	flag.Parse()
 
-	to := textoutput.NewTextOutput(colors, !quiet)
+	to := textoutput.New()
 
-	if version {
-		to.OutputTags(vt100.BackgroundRed.String() + "gnetlark<off> <white>1.0.0<off>")
-		return
+	hs := &httpServer{
+		port:           port,
+		multicore:      multicore,
+		to:             to,
+		sourceFilename: sourceFilename,
 	}
 
-	var events gnet.Events
-	events.Multicore = true
-
-	events.OnInitComplete = func(srv gnet.Server) (action gnet.Action) {
-		log.Printf("HTTP server started on port %d", port)
-		return
-	}
-
-	events.React = func(c gnet.Conn) (out []byte, action gnet.Action) {
-		top, tail := c.ReadPair()
-		data := append(top, tail...)
-		var req gnetlark.Request
-		leftover, err := gnetlark.ParseReq(data, &req)
-		if err != nil {
-			log.Println("Server error: " + err.Error())
-			out = gnetlark.Respond(to, out, sourceFilename, "error", "500 Error", err.Error()+"\n", req.Method, req.Path)
-			action = gnet.Close
-			return
-		} else if len(leftover) == len(data) {
-			log.Println("Request not ready")
-			return
-		}
-
-		// handle the request
-		req.RemoteAddr = c.RemoteAddr().String()
-		out = gnetlark.Respond(to, out, sourceFilename, "index", "200 OK", res, req.Method, req.Path)
-		c.ResetBuffer()
-		return
-	}
-	// We at least want the single HTTP address.
-	addrs := []string{fmt.Sprintf("tcp"+"://:%d", port)}
-
-	// Serve forever, but quit with an error if it stops
-	to.ErrExit(gnet.Serve(events, addrs...).Error())
+	addr := fmt.Sprintf("tcp://:%d", port)
+	to.OutputTags("<lightyellow>Server starting...<off>")
+	log.Println("Server exits:", gnet.Run(hs, addr, gnet.WithMulticore(multicore)))
 }
