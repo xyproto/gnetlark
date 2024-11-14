@@ -1,4 +1,4 @@
-# <img src="img/gnetlark.png" width="100%" alt="gnetlark logo">
+# <img src="img/gnetlark.png" width="30%" alt="gnetlark logo">
 
 [![GoDoc](https://godoc.org/github.com/xyproto/gnetlark?status.svg)](http://godoc.org/github.com/xyproto/gnetlark) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/gnetlark)](https://goreportcard.com/report/github.com/xyproto/gnetlark)
 
