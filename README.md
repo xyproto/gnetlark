@@ -17,7 +17,7 @@ Pronounced as "jetlark", just to keep people on their toes.
 
 ### Installation
 
-Quick installation of the development version, using Go 1.17 or later:
+Quick installation of the latest version, using Go 1.17 or later:
 
     go install github.com/xyproto/gnetlark/cmd/gnetlark@latest
 
@@ -66,6 +66,6 @@ The "Hello World" page can be served by a command like this:
 
 ## General info
 
-* Version: 1.0.1
+* Version: 1.0.2
 * Author: Alexander F. Rødseth &lt;xyproto@archlinux.org&gt;
 * License: BSD-3
