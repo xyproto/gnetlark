@@ -7,7 +7,7 @@ import (
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/xyproto/gnetlark"
-	"github.com/xyproto/textoutput"
+	"github.com/xyproto/vt"
 )
 
 var res string
@@ -17,7 +17,7 @@ type httpServer struct {
 
 	port           int
 	multicore      bool
-	to             *textoutput.TextOutput
+	to             *vt.TextOutput
 	sourceFilename string
 }
 
@@ -70,7 +70,7 @@ func main() {
 	flag.StringVar(&sourceFilename, "main", "index.star", "main script")
 	flag.Parse()
 
-	to := textoutput.New()
+	to := vt.New()
 
 	hs := &httpServer{
 		port:           port,
