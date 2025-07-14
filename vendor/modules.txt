@@ -7,27 +7,29 @@ github.com/mattn/go-isatty
 # github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d
 ## explicit
 github.com/mgutz/ansi
-# github.com/nathan-fiscaletti/consolesize-go v0.0.0-20220204101620-317176b6684d
-## explicit
-github.com/nathan-fiscaletti/consolesize-go
-# github.com/panjf2000/gnet/v2 v2.3.3
-## explicit; go 1.17
+# github.com/panjf2000/ants/v2 v2.11.3
+## explicit; go 1.18
+github.com/panjf2000/ants/v2
+github.com/panjf2000/ants/v2/pkg/sync
+# github.com/panjf2000/gnet/v2 v2.9.1
+## explicit; go 1.20
 github.com/panjf2000/gnet/v2
-github.com/panjf2000/gnet/v2/internal/bs
 github.com/panjf2000/gnet/v2/internal/gfd
-github.com/panjf2000/gnet/v2/internal/io
-github.com/panjf2000/gnet/v2/internal/math
-github.com/panjf2000/gnet/v2/internal/netpoll
-github.com/panjf2000/gnet/v2/internal/queue
-github.com/panjf2000/gnet/v2/internal/socket
+github.com/panjf2000/gnet/v2/pkg/bs
 github.com/panjf2000/gnet/v2/pkg/buffer/elastic
 github.com/panjf2000/gnet/v2/pkg/buffer/linkedlist
 github.com/panjf2000/gnet/v2/pkg/buffer/ring
 github.com/panjf2000/gnet/v2/pkg/errors
+github.com/panjf2000/gnet/v2/pkg/io
 github.com/panjf2000/gnet/v2/pkg/logging
+github.com/panjf2000/gnet/v2/pkg/math
+github.com/panjf2000/gnet/v2/pkg/netpoll
 github.com/panjf2000/gnet/v2/pkg/pool/bytebuffer
 github.com/panjf2000/gnet/v2/pkg/pool/byteslice
+github.com/panjf2000/gnet/v2/pkg/pool/goroutine
 github.com/panjf2000/gnet/v2/pkg/pool/ringbuffer
+github.com/panjf2000/gnet/v2/pkg/queue
+github.com/panjf2000/gnet/v2/pkg/socket
 # github.com/pkg/term v1.2.0-beta.2.0.20210419004637-f749b98bd0ba
 ## explicit; go 1.14
 github.com/pkg/term
@@ -41,15 +43,9 @@ github.com/xyproto/burnfont
 # github.com/xyproto/env/v2 v2.5.3
 ## explicit; go 1.19
 github.com/xyproto/env/v2
-# github.com/xyproto/textoutput v1.17.1
-## explicit; go 1.22.0
-github.com/xyproto/textoutput
 # github.com/xyproto/vt v1.2.5
 ## explicit; go 1.24.4
 github.com/xyproto/vt
-# github.com/xyproto/vt100 v1.16.11
-## explicit; go 1.22.0
-github.com/xyproto/vt100
 # go.starlark.net v0.0.0-20250701195324-d457b4515e0e
 ## explicit; go 1.19
 go.starlark.net/internal/compile
@@ -60,7 +56,7 @@ go.starlark.net/syntax
 # go.uber.org/multierr v1.11.0
 ## explicit; go 1.19
 go.uber.org/multierr
-# go.uber.org/zap v1.26.0
+# go.uber.org/zap v1.27.0
 ## explicit; go 1.19
 go.uber.org/zap
 go.uber.org/zap/buffer
@@ -71,8 +67,8 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
-# golang.org/x/sync v0.3.0
-## explicit; go 1.17
+# golang.org/x/sync v0.16.0
+## explicit; go 1.23.0
 golang.org/x/sync/errgroup
 # golang.org/x/sys v0.34.0
 ## explicit; go 1.23.0

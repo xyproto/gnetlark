@@ -12,174 +12,121 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux || freebsd || dragonfly || netbsd || openbsd || darwin
-// +build linux freebsd dragonfly netbsd openbsd darwin
+//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd
 
 package gnet
 
 import (
 	"context"
-	"runtime"
-	"sync"
+	"errors"
+	"strings"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/panjf2000/gnet/v2/internal/gfd"
-	"github.com/panjf2000/gnet/v2/internal/netpoll"
-	"github.com/panjf2000/gnet/v2/pkg/errors"
+	errorx "github.com/panjf2000/gnet/v2/pkg/errors"
+	"github.com/panjf2000/gnet/v2/pkg/logging"
+	"github.com/panjf2000/gnet/v2/pkg/netpoll"
+	"github.com/panjf2000/gnet/v2/pkg/queue"
+	"github.com/panjf2000/gnet/v2/pkg/socket"
 )
 
 type engine struct {
-	ln         *listener    // the listener for accepting new connections
-	opts       *Options     // options with engine
-	acceptor   *eventloop   // main event-loop for accepting connections
-	eventLoops loadBalancer // event-loops for handling events
-	inShutdown int32        // whether the engine is in shutdown
-	ticker     struct {
-		ctx    context.Context    // context for ticker
-		cancel context.CancelFunc // function to stop the ticker
-	}
-	workerPool struct {
+	listeners    map[int]*listener // listeners for accepting incoming connections
+	opts         *Options          // options with engine
+	ingress      *eventloop        // main event-loop that monitors all listeners
+	eventLoops   loadBalancer      // event-loops for handling events
+	inShutdown   atomic.Bool       // whether the engine is in shutdown
+	turnOff      context.CancelFunc
+	eventHandler EventHandler // user eventHandler
+	concurrency  struct {
 		*errgroup.Group
 
-		shutdownCtx context.Context
-		shutdown    context.CancelFunc
-		once        sync.Once
+		ctx context.Context
 	}
-	eventHandler EventHandler // user eventHandler
 }
 
-func (eng *engine) isInShutdown() bool {
-	return atomic.LoadInt32(&eng.inShutdown) == 1
+func (eng *engine) isShutdown() bool {
+	return eng.inShutdown.Load()
 }
 
 // shutdown signals the engine to shut down.
 func (eng *engine) shutdown(err error) {
-	if err != nil && err != errors.ErrEngineShutdown {
+	if err != nil && !errors.Is(err, errorx.ErrEngineShutdown) {
 		eng.opts.Logger.Errorf("engine is being shutdown with error: %v", err)
 	}
-
-	eng.workerPool.once.Do(func() {
-		eng.workerPool.shutdown()
-	})
-}
-
-func (eng *engine) startEventLoops() {
-	eng.eventLoops.iterate(func(i int, el *eventloop) bool {
-		eng.workerPool.Go(el.run)
-		return true
-	})
+	// Cancel the context to stop the engine.
+	eng.turnOff()
 }
 
 func (eng *engine) closeEventLoops() {
-	eng.eventLoops.iterate(func(i int, el *eventloop) bool {
-		el.ln.close()
+	eng.eventLoops.iterate(func(_ int, el *eventloop) bool {
+		for _, ln := range el.listeners {
+			ln.close()
+		}
 		_ = el.poller.Close()
 		return true
 	})
-	if eng.acceptor != nil {
-		eng.ln.close()
-		err := eng.acceptor.poller.Close()
+	if eng.ingress != nil {
+		for _, ln := range eng.listeners {
+			ln.close()
+		}
+		err := eng.ingress.poller.Close()
 		if err != nil {
 			eng.opts.Logger.Errorf("failed to close poller when stopping engine: %v", err)
 		}
 	}
 }
 
-func (eng *engine) startSubReactors() {
-	eng.eventLoops.iterate(func(i int, el *eventloop) bool {
-		eng.workerPool.Go(el.activateSubReactor)
-		return true
-	})
-}
-
-func (eng *engine) activateEventLoops(numEventLoop int) (err error) {
-	network, address := eng.ln.network, eng.ln.address
-	ln := eng.ln
-	var striker *eventloop
+func (eng *engine) runEventLoops(ctx context.Context, numEventLoop int) error {
+	var el0 *eventloop
+	lns := eng.listeners
 	// Create loops locally and bind the listeners.
 	for i := 0; i < numEventLoop; i++ {
 		if i > 0 {
-			if ln, err = initListener(network, address, eng.opts); err != nil {
-				return
+			lns = make(map[int]*listener, len(eng.listeners))
+			for _, l := range eng.listeners {
+				ln, err := initListener(l.network, l.address, eng.opts)
+				if err != nil {
+					return err
+				}
+				lns[ln.fd] = ln
 			}
 		}
-		var p *netpoll.Poller
-		if p, err = netpoll.OpenPoller(); err == nil {
-			el := new(eventloop)
-			el.ln = ln
-			el.engine = eng
-			el.poller = p
-			el.buffer = make([]byte, eng.opts.ReadBufferCap)
-			el.connections.init()
-			el.eventHandler = eng.eventHandler
-			if err = el.poller.AddRead(el.ln.packPollAttachment(el.accept)); err != nil {
-				return
-			}
-			eng.eventLoops.register(el)
-
-			// Start the ticker.
-			if el.idx == 0 && eng.opts.Ticker {
-				striker = el
-			}
-		} else {
-			return
-		}
-	}
-
-	// Start event-loops in background.
-	eng.startEventLoops()
-
-	eng.workerPool.Go(func() error {
-		striker.ticker(eng.ticker.ctx)
-		return nil
-	})
-
-	return
-}
-
-func (eng *engine) activateReactors(numEventLoop int) error {
-	for i := 0; i < numEventLoop; i++ {
-		if p, err := netpoll.OpenPoller(); err == nil {
-			el := new(eventloop)
-			el.ln = eng.ln
-			el.engine = eng
-			el.poller = p
-			el.buffer = make([]byte, eng.opts.ReadBufferCap)
-			el.connections.init()
-			el.eventHandler = eng.eventHandler
-			eng.eventLoops.register(el)
-		} else {
+		p, err := netpoll.OpenPoller()
+		if err != nil {
 			return err
 		}
-	}
-
-	// Start sub reactors in background.
-	eng.startSubReactors()
-
-	if p, err := netpoll.OpenPoller(); err == nil {
 		el := new(eventloop)
-		el.ln = eng.ln
-		el.idx = -1
+		el.listeners = lns
 		el.engine = eng
 		el.poller = p
+		el.buffer = make([]byte, eng.opts.ReadBufferCap)
+		el.connections.init()
 		el.eventHandler = eng.eventHandler
-		if err = el.poller.AddRead(eng.ln.packPollAttachment(eng.accept)); err != nil {
-			return err
+		for _, ln := range lns {
+			if err = el.poller.AddRead(ln.packPollAttachment(el.accept), false); err != nil {
+				return err
+			}
 		}
-		eng.acceptor = el
+		eng.eventLoops.register(el)
 
-		// Start main reactor in background.
-		eng.workerPool.Go(el.activateMainReactor)
-	} else {
-		return err
+		// Start the ticker.
+		if eng.opts.Ticker && el.idx == 0 {
+			el0 = el
+		}
 	}
 
-	// Start the ticker.
-	if eng.opts.Ticker {
-		eng.workerPool.Go(func() error {
-			eng.acceptor.ticker(eng.ticker.ctx)
+	// Start event-loops in the background.
+	eng.eventLoops.iterate(func(_ int, el *eventloop) bool {
+		eng.concurrency.Go(el.run)
+		return true
+	})
+
+	if el0 != nil {
+		eng.concurrency.Go(func() error {
+			el0.ticker(ctx)
 			return nil
 		})
 	}
@@ -187,41 +134,89 @@ func (eng *engine) activateReactors(numEventLoop int) error {
 	return nil
 }
 
-func (eng *engine) start(numEventLoop int) error {
-	if eng.opts.ReusePort || eng.ln.network == "udp" {
-		return eng.activateEventLoops(numEventLoop)
+func (eng *engine) activateReactors(ctx context.Context, numEventLoop int) error {
+	for i := 0; i < numEventLoop; i++ {
+		p, err := netpoll.OpenPoller()
+		if err != nil {
+			return err
+		}
+		el := new(eventloop)
+		el.listeners = eng.listeners
+		el.engine = eng
+		el.poller = p
+		el.buffer = make([]byte, eng.opts.ReadBufferCap)
+		el.connections.init()
+		el.eventHandler = eng.eventHandler
+		eng.eventLoops.register(el)
 	}
 
-	return eng.activateReactors(numEventLoop)
+	// Start sub reactors in the background.
+	eng.eventLoops.iterate(func(_ int, el *eventloop) bool {
+		eng.concurrency.Go(el.orbit)
+		return true
+	})
+
+	p, err := netpoll.OpenPoller()
+	if err != nil {
+		return err
+	}
+	el := new(eventloop)
+	el.listeners = eng.listeners
+	el.idx = -1
+	el.engine = eng
+	el.poller = p
+	el.eventHandler = eng.eventHandler
+	for _, ln := range eng.listeners {
+		if err = el.poller.AddRead(ln.packPollAttachment(el.accept0), true); err != nil {
+			return err
+		}
+	}
+	eng.ingress = el
+
+	// Start the main reactor in the background.
+	eng.concurrency.Go(el.rotate)
+
+	// Start the ticker.
+	if eng.opts.Ticker {
+		eng.concurrency.Go(func() error {
+			eng.ingress.ticker(ctx)
+			return nil
+		})
+	}
+
+	return nil
 }
 
-func (eng *engine) stop(s Engine) {
+func (eng *engine) start(ctx context.Context, numEventLoop int) error {
+	if eng.opts.ReusePort {
+		return eng.runEventLoops(ctx, numEventLoop)
+	}
+
+	return eng.activateReactors(ctx, numEventLoop)
+}
+
+func (eng *engine) stop(ctx context.Context, s Engine) {
 	// Wait on a signal for shutdown
-	<-eng.workerPool.shutdownCtx.Done()
+	<-ctx.Done()
 
 	eng.eventHandler.OnShutdown(s)
 
 	// Notify all event-loops to exit.
 	eng.eventLoops.iterate(func(i int, el *eventloop) bool {
-		err := el.poller.UrgentTrigger(func(_ interface{}) error { return errors.ErrEngineShutdown }, nil)
+		err := el.poller.Trigger(queue.HighPriority, func(_ any) error { return errorx.ErrEngineShutdown }, nil)
 		if err != nil {
-			eng.opts.Logger.Errorf("failed to call UrgentTrigger on sub event-loop when stopping engine: %v", err)
+			eng.opts.Logger.Errorf("failed to enqueue shutdown signal of high-priority for event-loop(%d): %v", i, err)
 		}
 		return true
 	})
-	if eng.acceptor != nil {
-		err := eng.acceptor.poller.UrgentTrigger(func(_ interface{}) error { return errors.ErrEngineShutdown }, nil)
+	if eng.ingress != nil {
+		err := eng.ingress.poller.Trigger(queue.HighPriority, func(_ any) error { return errorx.ErrEngineShutdown }, nil)
 		if err != nil {
-			eng.opts.Logger.Errorf("failed to call UrgentTrigger on main event-loop when stopping engine: %v", err)
+			eng.opts.Logger.Errorf("failed to enqueue shutdown signal of high-priority for main event-loop: %v", err)
 		}
 	}
 
-	// Stop the ticker.
-	if eng.ticker.cancel != nil {
-		eng.ticker.cancel()
-	}
-
-	if err := eng.workerPool.Wait(); err != nil {
+	if err := eng.concurrency.Wait(); err != nil {
 		eng.opts.Logger.Errorf("engine shutdown error: %v", err)
 	}
 
@@ -229,33 +224,29 @@ func (eng *engine) stop(s Engine) {
 	eng.closeEventLoops()
 
 	// Put the engine into the shutdown state.
-	atomic.StoreInt32(&eng.inShutdown, 1)
+	eng.inShutdown.Store(true)
 }
 
-func run(eventHandler EventHandler, listener *listener, options *Options, protoAddr string) error {
-	// Figure out the proper number of event-loops/goroutines to run.
-	numEventLoop := 1
-	if options.Multicore {
-		numEventLoop = runtime.NumCPU()
-	}
-	if options.NumEventLoop > 0 {
-		numEventLoop = options.NumEventLoop
-	}
-	if numEventLoop > gfd.EventLoopIndexMax {
-		numEventLoop = gfd.EventLoopIndexMax
-	}
+func run(eventHandler EventHandler, listeners []*listener, options *Options, addrs []string) error {
+	numEventLoop := determineEventLoops(options)
+	logging.Infof("Launching gnet with %d event-loops, listening on: %s",
+		numEventLoop, strings.Join(addrs, " | "))
 
-	shutdownCtx, shutdown := context.WithCancel(context.Background())
+	lns := make(map[int]*listener, len(listeners))
+	for _, ln := range listeners {
+		lns[ln.fd] = ln
+	}
+	rootCtx, shutdown := context.WithCancel(context.Background())
+	eg, ctx := errgroup.WithContext(rootCtx)
 	eng := engine{
-		ln:   listener,
-		opts: options,
-		workerPool: struct {
-			*errgroup.Group
-			shutdownCtx context.Context
-			shutdown    context.CancelFunc
-			once        sync.Once
-		}{&errgroup.Group{}, shutdownCtx, shutdown, sync.Once{}},
+		listeners:    lns,
+		opts:         options,
+		turnOff:      shutdown,
 		eventHandler: eventHandler,
+		concurrency: struct {
+			*errgroup.Group
+			ctx context.Context
+		}{eg, ctx},
 	}
 	switch options.LB {
 	case RoundRobin:
@@ -266,27 +257,35 @@ func run(eventHandler EventHandler, listener *listener, options *Options, protoA
 		eng.eventLoops = new(sourceAddrHashLoadBalancer)
 	}
 
-	if eng.opts.Ticker {
-		eng.ticker.ctx, eng.ticker.cancel = context.WithCancel(context.Background())
-	}
-
 	e := Engine{&eng}
 	switch eng.eventHandler.OnBoot(e) {
-	case None:
+	case None, Close:
 	case Shutdown:
 		return nil
 	}
 
-	if err := eng.start(numEventLoop); err != nil {
+	if err := eng.start(ctx, numEventLoop); err != nil {
 		eng.closeEventLoops()
 		eng.opts.Logger.Errorf("gnet engine is stopping with error: %v", err)
 		return err
 	}
-	defer eng.stop(e)
+	defer eng.stop(rootCtx, e)
 
-	allEngines.Store(protoAddr, &eng)
+	for _, addr := range addrs {
+		allEngines.Store(addr, &eng)
+	}
 
 	return nil
+}
+
+func setKeepAlive(fd int, enabled bool, idle, intvl time.Duration, cnt int) error {
+	if intvl == 0 {
+		intvl = idle / 5
+	}
+	if cnt == 0 {
+		cnt = 5
+	}
+	return socket.SetKeepAlive(fd, enabled, int(idle.Seconds()), int(intvl.Seconds()), cnt)
 }
 
 /*
@@ -299,7 +298,7 @@ func (eng *engine) sendCmd(cmd *asyncCmd, urgent bool) error {
 		return errors.ErrInvalidConn
 	}
 	if urgent {
-		return el.poller.UrgentTrigger(el.execCmd, cmd)
+		return el.poller.Trigger(queue.LowPriority, el.execCmd, cmd)
 	}
 	return el.poller.Trigger(el.execCmd, cmd)
 }

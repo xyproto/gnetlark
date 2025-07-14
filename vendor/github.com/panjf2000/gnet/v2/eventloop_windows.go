@@ -15,29 +15,126 @@
 package gnet
 
 import (
-	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"net"
 	"runtime"
-	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/panjf2000/gnet/v2/pkg/errors"
+	errorx "github.com/panjf2000/gnet/v2/pkg/errors"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
+	"github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
 )
 
 type eventloop struct {
-	ch           chan interface{}   // channel for event-loop
+	ch           chan any           // channel for event-loop
 	idx          int                // index of event-loop in event-loops
 	eng          *engine            // engine in loop
-	cache        bytes.Buffer       // temporary buffer for scattered bytes
 	connCount    int32              // number of active connections in event-loop
 	connections  map[*conn]struct{} // TCP connection map: fd -> conn
 	eventHandler EventHandler       // user eventHandler
 }
 
+func (el *eventloop) Register(ctx context.Context, addr net.Addr) (<-chan RegisteredResult, error) {
+	if el.eng.isShutdown() {
+		return nil, errorx.ErrEngineInShutdown
+	}
+	if addr == nil {
+		return nil, errorx.ErrInvalidNetworkAddress
+	}
+	return el.enroll(nil, addr, FromContext(ctx))
+}
+
+func (el *eventloop) Enroll(ctx context.Context, c net.Conn) (<-chan RegisteredResult, error) {
+	if el.eng.isShutdown() {
+		return nil, errorx.ErrEngineInShutdown
+	}
+	if c == nil {
+		return nil, errorx.ErrInvalidNetConn
+	}
+	return el.enroll(c, c.RemoteAddr(), FromContext(ctx))
+}
+
+func (el *eventloop) Execute(ctx context.Context, runnable Runnable) error {
+	if el.eng.isShutdown() {
+		return errorx.ErrEngineInShutdown
+	}
+	if runnable == nil {
+		return errorx.ErrNilRunnable
+	}
+	return goroutine.DefaultWorkerPool.Submit(func() {
+		el.ch <- func() error {
+			return runnable.Run(ctx)
+		}
+	})
+}
+
+func (el *eventloop) Schedule(context.Context, Runnable, time.Duration) error {
+	return errorx.ErrUnsupportedOp
+}
+
+func (el *eventloop) Close(c Conn) error {
+	return el.close(c.(*conn), nil)
+}
+
 func (el *eventloop) getLogger() logging.Logger {
 	return el.eng.opts.Logger
+}
+
+func (el *eventloop) enroll(c net.Conn, addr net.Addr, ctx any) (resCh chan RegisteredResult, err error) {
+	resCh = make(chan RegisteredResult, 1)
+	err = goroutine.DefaultWorkerPool.Submit(func() {
+		defer close(resCh)
+
+		var err error
+		if c == nil {
+			if c, err = net.Dial(addr.Network(), addr.String()); err != nil {
+				resCh <- RegisteredResult{Err: err}
+				return
+			}
+		}
+
+		connOpened := make(chan struct{})
+		var gc *conn
+		switch addr.Network() {
+		case "tcp", "tcp4", "tcp6", "unix":
+			gc = newStreamConn(el, c, ctx)
+			el.ch <- &openConn{c: gc, cb: func() { close(connOpened) }}
+			goroutine.DefaultWorkerPool.Submit(func() {
+				var buffer [0x10000]byte
+				for {
+					n, err := c.Read(buffer[:])
+					if err != nil {
+						el.ch <- &netErr{gc, err}
+						return
+					}
+					el.ch <- packTCPConn(gc, buffer[:n])
+				}
+			})
+		case "udp", "udp4", "udp6":
+			gc = newUDPConn(el, nil, c, c.LocalAddr(), c.RemoteAddr(), ctx)
+			el.ch <- &openConn{c: gc, cb: func() { close(connOpened) }}
+			goroutine.DefaultWorkerPool.Submit(func() {
+				var buffer [0x10000]byte
+				for {
+					n, err := c.Read(buffer[:])
+					if err != nil {
+						el.ch <- &netErr{gc, err}
+						return
+					}
+					gc := newUDPConn(el, nil, c, c.LocalAddr(), c.RemoteAddr(), ctx)
+					el.ch <- packUDPConn(gc, buffer[:n])
+				}
+			})
+		}
+
+		<-connOpened
+
+		resCh <- RegisteredResult{Conn: gc}
+	})
+	return
 }
 
 func (el *eventloop) incConn(delta int32) {
@@ -67,19 +164,17 @@ func (el *eventloop) run() (err error) {
 			err = v
 		case *netErr:
 			err = el.close(v.c, v.err)
-		case *conn:
+		case *openConn:
 			err = el.open(v)
 		case *tcpConn:
-			unpackTCPConn(v)
-			err = el.read(v.c)
-			resetTCPConn(v)
+			err = el.read(unpackTCPConn(v))
 		case *udpConn:
 			err = el.readUDP(v.c)
 		case func() error:
 			err = v()
 		}
 
-		if err == errors.ErrEngineShutdown {
+		if errors.Is(err, errorx.ErrEngineShutdown) {
 			el.getLogger().Debugf("event-loop(%d) is exiting in terms of the demand from user, %v", el.idx, err)
 			break
 		} else if err != nil {
@@ -90,7 +185,12 @@ func (el *eventloop) run() (err error) {
 	return nil
 }
 
-func (el *eventloop) open(c *conn) error {
+func (el *eventloop) open(oc *openConn) error {
+	if oc.cb != nil {
+		defer oc.cb()
+	}
+
+	c := oc.c
 	el.connections[c] = struct{}{}
 	el.incConn(1)
 
@@ -114,7 +214,7 @@ func (el *eventloop) read(c *conn) error {
 	case Close:
 		return el.close(c, nil)
 	case Shutdown:
-		return errors.ErrEngineShutdown
+		return errorx.ErrEngineShutdown
 	}
 	_, _ = c.inboundBuffer.Write(c.buffer.B)
 	c.buffer.Reset()
@@ -125,7 +225,7 @@ func (el *eventloop) read(c *conn) error {
 func (el *eventloop) readUDP(c *conn) error {
 	action := el.eventHandler.OnTraffic(c)
 	if action == Shutdown {
-		return errors.ErrEngineShutdown
+		return errorx.ErrEngineShutdown
 	}
 	c.release()
 	return nil
@@ -149,11 +249,11 @@ func (el *eventloop) ticker(ctx context.Context) {
 	for {
 		delay, action = el.eventHandler.OnTick()
 		switch action {
-		case None:
+		case None, Close:
 		case Shutdown:
 			if !shutdown {
 				shutdown = true
-				el.ch <- errors.ErrEngineShutdown
+				el.ch <- errorx.ErrEngineShutdown
 				el.getLogger().Debugf("stopping ticker in event-loop(%d) from Tick()", el.idx)
 			}
 		}
@@ -180,28 +280,18 @@ func (el *eventloop) wake(c *conn) error {
 }
 
 func (el *eventloop) close(c *conn, err error) error {
-	if addr := c.localAddr; addr != nil && strings.HasPrefix(addr.Network(), "udp") {
-		action := el.eventHandler.OnClose(c, err)
-		if c.rawConn != nil {
-			if err := c.rawConn.Close(); err != nil {
-				el.getLogger().Errorf("failed to close connection(%s), error:%v", c.remoteAddr.String(), err)
-			}
-		}
-		c.release()
-		return el.handleAction(c, action)
-	}
-
-	if _, ok := el.connections[c]; !ok {
+	if _, ok := el.connections[c]; c.rawConn == nil || !ok {
 		return nil // ignore stale wakes.
 	}
 
 	delete(el.connections, c)
 	el.incConn(-1)
 	action := el.eventHandler.OnClose(c, err)
-	if err := c.rawConn.Close(); err != nil {
-		el.getLogger().Errorf("failed to close connection(%s), error:%v", c.remoteAddr.String(), err)
-	}
+	err = c.rawConn.Close()
 	c.release()
+	if err != nil {
+		return fmt.Errorf("failed to close connection=%s in event-loop(%d): %v", c.remoteAddr, el.idx, err)
+	}
 
 	return el.handleAction(c, action)
 }
@@ -213,7 +303,7 @@ func (el *eventloop) handleAction(c *conn, action Action) error {
 	case Close:
 		return el.close(c, nil)
 	case Shutdown:
-		return errors.ErrEngineShutdown
+		return errorx.ErrEngineShutdown
 	default:
 		return nil
 	}

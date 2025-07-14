@@ -25,11 +25,12 @@ import (
 
 	errorx "github.com/panjf2000/gnet/v2/pkg/errors"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
+	"github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
 )
 
 type Client struct {
 	opts *Options
-	el   *eventloop
+	eng  *engine
 }
 
 func NewClient(eh EventHandler, opts ...Option) (cli *Client, err error) {
@@ -48,50 +49,75 @@ func NewClient(eh EventHandler, opts ...Option) (cli *Client, err error) {
 	}
 	logging.SetDefaultLoggerAndFlusher(logger, logFlusher)
 
-	shutdownCtx, shutdown := context.WithCancel(context.Background())
-	eng := &engine{
-		ln:   &listener{},
-		opts: options,
-		workerPool: struct {
+	rootCtx, shutdown := context.WithCancel(context.Background())
+	eg, ctx := errgroup.WithContext(rootCtx)
+	eng := engine{
+		listeners:    []*listener{},
+		opts:         options,
+		turnOff:      shutdown,
+		eventHandler: eh,
+		eventLoops:   new(leastConnectionsLoadBalancer),
+		concurrency: struct {
 			*errgroup.Group
-			shutdownCtx context.Context
-			shutdown    context.CancelFunc
-			once        sync.Once
-		}{&errgroup.Group{}, shutdownCtx, shutdown, sync.Once{}},
-		eventHandler: eh,
+			ctx context.Context
+		}{eg, ctx},
 	}
-	cli.el = &eventloop{
-		ch:           make(chan interface{}, 1024),
-		eng:          eng,
-		connections:  make(map[*conn]struct{}),
-		eventHandler: eh,
-	}
+	cli.eng = &eng
 	return
 }
 
 func (cli *Client) Start() error {
-	cli.el.eventHandler.OnBoot(Engine{})
-	cli.el.eng.workerPool.Go(cli.el.run)
-	if cli.opts.Ticker {
-		cli.el.eng.ticker.ctx, cli.el.eng.ticker.cancel = context.WithCancel(context.Background())
-		cli.el.eng.workerPool.Go(func() error {
-			cli.el.ticker(cli.el.eng.ticker.ctx)
+	numEventLoop := determineEventLoops(cli.opts)
+	logging.Infof("Starting gnet client with %d event loops", numEventLoop)
+
+	cli.eng.eventHandler.OnBoot(Engine{cli.eng})
+
+	var el0 *eventloop
+	for i := 0; i < numEventLoop; i++ {
+		el := eventloop{
+			ch:           make(chan any, 1024),
+			eng:          cli.eng,
+			connections:  make(map[*conn]struct{}),
+			eventHandler: cli.eng.eventHandler,
+		}
+		cli.eng.eventLoops.register(&el)
+		cli.eng.concurrency.Go(el.run)
+		if cli.opts.Ticker && el.idx == 0 {
+			el0 = &el
+		}
+	}
+
+	if el0 != nil {
+		ctx := cli.eng.concurrency.ctx
+		cli.eng.concurrency.Go(func() error {
+			el0.ticker(ctx)
 			return nil
 		})
 	}
+
 	logging.Debugf("default logging level is %s", logging.LogLevel())
+
 	return nil
 }
 
-func (cli *Client) Stop() (err error) {
-	cli.el.ch <- errorx.ErrEngineShutdown
-	if cli.opts.Ticker {
-		cli.el.eng.ticker.cancel()
-	}
-	_ = cli.el.eng.workerPool.Wait()
-	cli.el.eventHandler.OnShutdown(Engine{})
+func (cli *Client) Stop() error {
+	cli.eng.shutdown(nil)
+
+	cli.eng.eventHandler.OnShutdown(Engine{cli.eng})
+
+	// Notify all event-loops to exit.
+	cli.eng.closeEventLoops()
+
+	// Wait for all event-loops to exit.
+	err := cli.eng.concurrency.Wait()
+
+	// Put the engine into the shutdown state.
+	cli.eng.inShutdown.Store(true)
+
+	// Flush the logger.
 	logging.Cleanup()
-	return
+
+	return err
 }
 
 var (
@@ -118,6 +144,10 @@ func unixAddr(addr string) string {
 }
 
 func (cli *Client) Dial(network, addr string) (Conn, error) {
+	return cli.DialContext(network, addr, nil)
+}
+
+func (cli *Client) DialContext(network, addr string, ctx any) (Conn, error) {
 	var (
 		c   net.Conn
 		err error
@@ -135,10 +165,16 @@ func (cli *Client) Dial(network, addr string) (Conn, error) {
 			return nil, err
 		}
 	}
-	return cli.Enroll(c)
+	return cli.EnrollContext(c, ctx)
 }
 
 func (cli *Client) Enroll(nc net.Conn) (gc Conn, err error) {
+	return cli.EnrollContext(nc, nil)
+}
+
+func (cli *Client) EnrollContext(nc net.Conn, ctx any) (gc Conn, err error) {
+	el := cli.eng.eventLoops.next(nil)
+	connOpened := make(chan struct{})
 	switch v := nc.(type) {
 	case *net.TCPConn:
 		if cli.opts.TCPNoDelay == TCPNoDelay {
@@ -146,40 +182,45 @@ func (cli *Client) Enroll(nc net.Conn) (gc Conn, err error) {
 				return
 			}
 		}
-		if cli.opts.TCPKeepAlive > 0 {
-			if err = v.SetKeepAlive(true); err != nil {
-				return
+		c := newStreamConn(el, nc, ctx)
+		if opts := cli.opts; opts.TCPKeepAlive > 0 {
+			idle := opts.TCPKeepAlive
+			intvl := opts.TCPKeepInterval
+			if intvl == 0 {
+				intvl = opts.TCPKeepAlive / 5
 			}
-			if err = v.SetKeepAlivePeriod(cli.opts.TCPKeepAlive); err != nil {
+			cnt := opts.TCPKeepCount
+			if opts.TCPKeepCount == 0 {
+				cnt = 5
+			}
+			if err = c.SetKeepAlive(true, idle, intvl, cnt); err != nil {
 				return
 			}
 		}
-
-		c := newTCPConn(nc, cli.el)
-		cli.el.ch <- c
-		go func(c *conn, tc net.Conn, el *eventloop) {
+		el.ch <- &openConn{c: c, cb: func() { close(connOpened) }}
+		goroutine.DefaultWorkerPool.Submit(func() {
 			var buffer [0x10000]byte
 			for {
-				n, err := tc.Read(buffer[:])
+				n, err := nc.Read(buffer[:])
 				if err != nil {
 					el.ch <- &netErr{c, err}
 					return
 				}
 				el.ch <- packTCPConn(c, buffer[:n])
 			}
-		}(c, nc, cli.el)
+		})
 		gc = c
 	case *net.UnixConn:
-		c := newTCPConn(nc, cli.el)
-		cli.el.ch <- c
-		go func(c *conn, uc net.Conn, el *eventloop) {
+		c := newStreamConn(el, nc, ctx)
+		el.ch <- &openConn{c: c, cb: func() { close(connOpened) }}
+		goroutine.DefaultWorkerPool.Submit(func() {
 			var buffer [0x10000]byte
 			for {
-				n, err := uc.Read(buffer[:])
+				n, err := nc.Read(buffer[:])
 				if err != nil {
 					el.ch <- &netErr{c, err}
 					mu.RLock()
-					tmpDir := unixAddrDirs[uc.LocalAddr().String()]
+					tmpDir := unixAddrDirs[nc.LocalAddr().String()]
 					mu.RUnlock()
 					if err := os.RemoveAll(tmpDir); err != nil {
 						logging.Errorf("failed to remove temporary directory for unix local address: %v", err)
@@ -188,27 +229,28 @@ func (cli *Client) Enroll(nc net.Conn) (gc Conn, err error) {
 				}
 				el.ch <- packTCPConn(c, buffer[:n])
 			}
-		}(c, nc, cli.el)
+		})
 		gc = c
 	case *net.UDPConn:
-		c := newUDPConn(cli.el, nc.LocalAddr(), nc.RemoteAddr())
-		c.rawConn = nc
-		go func(uc net.Conn, el *eventloop) {
+		c := newUDPConn(el, nil, nc, nc.LocalAddr(), nc.RemoteAddr(), ctx)
+		el.ch <- &openConn{c: c, cb: func() { close(connOpened) }}
+		goroutine.DefaultWorkerPool.Submit(func() {
 			var buffer [0x10000]byte
 			for {
-				n, err := uc.Read(buffer[:])
+				n, err := nc.Read(buffer[:])
 				if err != nil {
+					el.ch <- &netErr{c, err}
 					return
 				}
-				c := newUDPConn(cli.el, uc.LocalAddr(), uc.RemoteAddr())
-				c.rawConn = uc
+				c := newUDPConn(el, nil, nc, nc.LocalAddr(), nc.RemoteAddr(), ctx)
 				el.ch <- packUDPConn(c, buffer[:n])
 			}
-		}(nc, cli.el)
+		})
 		gc = c
 	default:
 		return nil, errorx.ErrUnsupportedProtocol
 	}
+	<-connOpened
 
 	return
 }

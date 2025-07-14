@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package logging provides logging functionality for gnet server,
+// Package logging provides logging functionality for gnet applications,
 // it sets up a default logger (powered by go.uber.org/zap)
-// which is about to be used by gnet server, it also allows users
-// to replace the default logger with their customized logger by just
-// implementing the `Logger` interface and assign it to the functional option `Options.Logger`,
-// pass it to `gnet.Serve` method.
+// that is about to be used by your gnet application.
+// You're allowed to replace the default logger with your customized logger by
+// implementing Logger and assign it to the functional option via gnet.WithLogger,
+// and then passing it to gnet.Run or gnet.Rotate.
 //
 // The environment variable `GNET_LOGGING_LEVEL` determines which zap logger level will be applied for logging.
 // The environment variable `GNET_LOGGING_FILE` is set to a local file path when you want to print logs into local file.
@@ -244,35 +244,35 @@ func Error(err error) {
 }
 
 // Debugf logs messages at DEBUG level.
-func Debugf(format string, args ...interface{}) {
+func Debugf(format string, args ...any) {
 	mu.RLock()
 	defaultLogger.Debugf(format, args...)
 	mu.RUnlock()
 }
 
 // Infof logs messages at INFO level.
-func Infof(format string, args ...interface{}) {
+func Infof(format string, args ...any) {
 	mu.RLock()
 	defaultLogger.Infof(format, args...)
 	mu.RUnlock()
 }
 
 // Warnf logs messages at WARN level.
-func Warnf(format string, args ...interface{}) {
+func Warnf(format string, args ...any) {
 	mu.RLock()
 	defaultLogger.Warnf(format, args...)
 	mu.RUnlock()
 }
 
 // Errorf logs messages at ERROR level.
-func Errorf(format string, args ...interface{}) {
+func Errorf(format string, args ...any) {
 	mu.RLock()
 	defaultLogger.Errorf(format, args...)
 	mu.RUnlock()
 }
 
 // Fatalf logs messages at FATAL level.
-func Fatalf(format string, args ...interface{}) {
+func Fatalf(format string, args ...any) {
 	mu.RLock()
 	defaultLogger.Fatalf(format, args...)
 	mu.RUnlock()
@@ -281,13 +281,13 @@ func Fatalf(format string, args ...interface{}) {
 // Logger is used for logging formatted messages.
 type Logger interface {
 	// Debugf logs messages at DEBUG level.
-	Debugf(format string, args ...interface{})
+	Debugf(format string, args ...any)
 	// Infof logs messages at INFO level.
-	Infof(format string, args ...interface{})
+	Infof(format string, args ...any)
 	// Warnf logs messages at WARN level.
-	Warnf(format string, args ...interface{})
+	Warnf(format string, args ...any)
 	// Errorf logs messages at ERROR level.
-	Errorf(format string, args ...interface{})
+	Errorf(format string, args ...any)
 	// Fatalf logs messages at FATAL level.
-	Fatalf(format string, args ...interface{})
+	Fatalf(format string, args ...any)
 }

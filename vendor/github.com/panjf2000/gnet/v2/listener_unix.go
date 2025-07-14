@@ -12,23 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux || freebsd || dragonfly || netbsd || openbsd || darwin
-// +build linux freebsd dragonfly netbsd openbsd darwin
+//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd
 
 package gnet
 
 import (
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 
 	"golang.org/x/sys/unix"
 
-	"github.com/panjf2000/gnet/v2/internal/netpoll"
-	"github.com/panjf2000/gnet/v2/internal/socket"
-	"github.com/panjf2000/gnet/v2/pkg/errors"
+	errorx "github.com/panjf2000/gnet/v2/pkg/errors"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
+	"github.com/panjf2000/gnet/v2/pkg/netpoll"
+	"github.com/panjf2000/gnet/v2/pkg/socket"
 )
 
 type listener struct {
@@ -36,7 +36,8 @@ type listener struct {
 	fd               int
 	addr             net.Addr
 	address, network string
-	sockOpts         []socket.Option
+	sockOptInts      []socket.Option[int]
+	sockOptStrs      []socket.Option[string]
 	pollAttachment   *netpoll.PollAttachment // listener attachment for poller
 }
 
@@ -45,23 +46,23 @@ func (ln *listener) packPollAttachment(handler netpoll.PollEventHandler) *netpol
 	return ln.pollAttachment
 }
 
-func (ln *listener) dup() (int, string, error) {
-	return netpoll.Dup(ln.fd)
+func (ln *listener) dup() (int, error) {
+	return socket.Dup(ln.fd)
 }
 
 func (ln *listener) normalize() (err error) {
 	switch ln.network {
 	case "tcp", "tcp4", "tcp6":
-		ln.fd, ln.addr, err = socket.TCPSocket(ln.network, ln.address, true, ln.sockOpts...)
+		ln.fd, ln.addr, err = socket.TCPSocket(ln.network, ln.address, true, ln.sockOptInts, ln.sockOptStrs)
 		ln.network = "tcp"
 	case "udp", "udp4", "udp6":
-		ln.fd, ln.addr, err = socket.UDPSocket(ln.network, ln.address, false, ln.sockOpts...)
+		ln.fd, ln.addr, err = socket.UDPSocket(ln.network, ln.address, false, ln.sockOptInts, ln.sockOptStrs)
 		ln.network = "udp"
 	case "unix":
 		_ = os.RemoveAll(ln.address)
-		ln.fd, ln.addr, err = socket.UnixSocket(ln.network, ln.address, true, ln.sockOpts...)
+		ln.fd, ln.addr, err = socket.UnixSocket(ln.network, ln.address, true, ln.sockOptInts, ln.sockOptStrs)
 	default:
-		err = errors.ErrUnsupportedProtocol
+		err = errorx.ErrUnsupportedProtocol
 	}
 	return
 }
@@ -78,38 +79,62 @@ func (ln *listener) close() {
 		})
 }
 
-func initListener(network, addr string, options *Options) (l *listener, err error) {
-	var sockOpts []socket.Option
-	if options.ReusePort || strings.HasPrefix(network, "udp") {
-		sockOpt := socket.Option{SetSockOpt: socket.SetReuseport, Opt: 1}
-		sockOpts = append(sockOpts, sockOpt)
+func initListener(network, addr string, options *Options) (ln *listener, err error) {
+	var (
+		sockOptInts []socket.Option[int]
+		sockOptStrs []socket.Option[string]
+	)
+
+	if options.ReusePort && network != "unix" {
+		sockOpt := socket.Option[int]{SetSockOpt: socket.SetReuseport, Opt: 1}
+		sockOptInts = append(sockOptInts, sockOpt)
 	}
 	if options.ReuseAddr {
-		sockOpt := socket.Option{SetSockOpt: socket.SetReuseAddr, Opt: 1}
-		sockOpts = append(sockOpts, sockOpt)
+		sockOpt := socket.Option[int]{SetSockOpt: socket.SetReuseAddr, Opt: 1}
+		sockOptInts = append(sockOptInts, sockOpt)
 	}
 	if options.TCPNoDelay == TCPNoDelay && strings.HasPrefix(network, "tcp") {
-		sockOpt := socket.Option{SetSockOpt: socket.SetNoDelay, Opt: 1}
-		sockOpts = append(sockOpts, sockOpt)
+		sockOpt := socket.Option[int]{SetSockOpt: socket.SetNoDelay, Opt: 1}
+		sockOptInts = append(sockOptInts, sockOpt)
 	}
 	if options.SocketRecvBuffer > 0 {
-		sockOpt := socket.Option{SetSockOpt: socket.SetRecvBuffer, Opt: options.SocketRecvBuffer}
-		sockOpts = append(sockOpts, sockOpt)
+		sockOpt := socket.Option[int]{SetSockOpt: socket.SetRecvBuffer, Opt: options.SocketRecvBuffer}
+		sockOptInts = append(sockOptInts, sockOpt)
 	}
 	if options.SocketSendBuffer > 0 {
-		sockOpt := socket.Option{SetSockOpt: socket.SetSendBuffer, Opt: options.SocketSendBuffer}
-		sockOpts = append(sockOpts, sockOpt)
+		sockOpt := socket.Option[int]{SetSockOpt: socket.SetSendBuffer, Opt: options.SocketSendBuffer}
+		sockOptInts = append(sockOptInts, sockOpt)
 	}
 	if strings.HasPrefix(network, "udp") {
 		udpAddr, err := net.ResolveUDPAddr(network, addr)
 		if err == nil && udpAddr.IP.IsMulticast() {
 			if sockoptFn := socket.SetMulticastMembership(network, udpAddr); sockoptFn != nil {
-				sockOpt := socket.Option{SetSockOpt: sockoptFn, Opt: options.MulticastInterfaceIndex}
-				sockOpts = append(sockOpts, sockOpt)
+				sockOpt := socket.Option[int]{SetSockOpt: sockoptFn, Opt: options.MulticastInterfaceIndex}
+				sockOptInts = append(sockOptInts, sockOpt)
 			}
 		}
 	}
-	l = &listener{network: network, address: addr, sockOpts: sockOpts}
-	err = l.normalize()
+	if options.BindToDevice != "" {
+		sockOpt := socket.Option[string]{SetSockOpt: socket.SetBindToDevice, Opt: options.BindToDevice}
+		sockOptStrs = append(sockOptStrs, sockOpt)
+	}
+
+	ln = &listener{network: network, address: addr, sockOptInts: sockOptInts, sockOptStrs: sockOptStrs}
+	err = ln.normalize()
+
+	if options.TCPKeepAlive > 0 && ln.network == "tcp" &&
+		(runtime.GOOS == "linux" || runtime.GOOS == "freebsd" || runtime.GOOS == "dragonfly") {
+		// TCP keepalive options will be inherited from the listening socket
+		// only when running on Linux, FreeBSD, or DragonFlyBSD.
+		//
+		// Check out https://github.com/nginx/nginx/pull/337 for details.
+		err = setKeepAlive(
+			ln.fd,
+			true,
+			options.TCPKeepAlive,
+			options.TCPKeepInterval,
+			options.TCPKeepCount)
+	}
+
 	return
 }
