@@ -1,5 +1,5 @@
-# github.com/mattn/go-colorable v0.1.13
-## explicit; go 1.15
+# github.com/mattn/go-colorable v0.1.14
+## explicit; go 1.18
 github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
@@ -38,16 +38,19 @@ github.com/valyala/bytebufferpool
 # github.com/xyproto/burnfont v1.2.3
 ## explicit; go 1.9
 github.com/xyproto/burnfont
-# github.com/xyproto/env/v2 v2.5.2
+# github.com/xyproto/env/v2 v2.5.3
 ## explicit; go 1.19
 github.com/xyproto/env/v2
 # github.com/xyproto/textoutput v1.17.1
 ## explicit; go 1.22.0
 github.com/xyproto/textoutput
+# github.com/xyproto/vt v1.2.5
+## explicit; go 1.24.4
+github.com/xyproto/vt
 # github.com/xyproto/vt100 v1.16.11
 ## explicit; go 1.22.0
 github.com/xyproto/vt100
-# go.starlark.net v0.0.0-20241125201518-c05ff208a98f
+# go.starlark.net v0.0.0-20250701195324-d457b4515e0e
 ## explicit; go 1.19
 go.starlark.net/internal/compile
 go.starlark.net/internal/spell
@@ -71,8 +74,8 @@ go.uber.org/zap/zapcore
 # golang.org/x/sync v0.3.0
 ## explicit; go 1.17
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.28.0
-## explicit; go 1.18
+# golang.org/x/sys v0.34.0
+## explicit; go 1.23.0
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # gopkg.in/natefinch/lumberjack.v2 v2.2.1
