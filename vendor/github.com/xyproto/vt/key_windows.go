@@ -5,160 +5,146 @@ package vt
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
 	"unicode"
-	"unicode/utf8"
+	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/term"
 )
 
 var (
-	defaultTimeout = 2 * time.Millisecond
-	lastKey        int
+	defaultTimeout = 100 * time.Millisecond // consistent with Unix VTIME minimum of 1 decisecond
 )
 
-// Key codes for 3-byte sequences (arrows, Home, End)
-var keyCodeLookup = map[[3]byte]int{
-	{27, 91, 65}:  253, // Up Arrow
-	{27, 91, 66}:  255, // Down Arrow
-	{27, 91, 67}:  254, // Right Arrow
-	{27, 91, 68}:  252, // Left Arrow
-	{27, 91, 'H'}: 1,   // Home (Ctrl-A)
-	{27, 91, 'F'}: 5,   // End (Ctrl-E)
-}
-
-// Key codes for 4-byte sequences (Page Up, Page Down, Home, End)
-var pageNavLookup = map[[4]byte]int{
-	{27, 91, 49, 126}: 1,   // Home (ESC [1~)
-	{27, 91, 52, 126}: 5,   // End (ESC [4~)
-	{27, 91, 53, 126}: 251, // Page Up (custom code)
-	{27, 91, 54, 126}: 250, // Page Down (custom code)
-}
-
-// Key codes for 6-byte sequences (Ctrl-Insert)
-var ctrlInsertLookup = map[[6]byte]int{
-	{27, 91, 50, 59, 53, 126}: 258, // Ctrl-Insert (ESC [2;5~)
-}
-
-// String representations for 3-byte sequences
-var keyStringLookup = map[[3]byte]string{
-	{27, 91, 65}:  "↑", // Up Arrow
-	{27, 91, 66}:  "↓", // Down Arrow
-	{27, 91, 67}:  "→", // Right Arrow
-	{27, 91, 68}:  "←", // Left Arrow
-	{27, 91, 'H'}: "⇱", // Home
-	{27, 91, 'F'}: "⇲", // End
-}
-
-// String representations for 4-byte sequences
-var pageStringLookup = map[[4]byte]string{
-	{27, 91, 49, 126}: "⇱", // Home
-	{27, 91, 52, 126}: "⇲", // End
-	{27, 91, 53, 126}: "⇞", // Page Up
-	{27, 91, 54, 126}: "⇟", // Page Down
-}
-
-// String representations for 6-byte sequences (Ctrl-Insert)
-var ctrlInsertStringLookup = map[[6]byte]string{
-	{27, 91, 50, 59, 53, 126}: "⎘", // Ctrl-Insert (Copy)
-}
-
 type TTY struct {
-	fd            int
-	originalState *term.State
-	timeout       time.Duration
+	fd              int
+	orig            *term.State
+	timeout         time.Duration
+	lastKey         int
+	useConsoleInput bool
+	conin           *os.File
+	pending         []byte
+	escArmed        bool
+	reader          io.Reader
 }
 
-// NewTTY opens stdin/stdout for terminal input/output on Windows
+// NewTTY opens the terminal
 func NewTTY() (*TTY, error) {
 	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
-		return nil, errors.New("not a terminal")
+	var conin *os.File
+
+	// Detect console vs PTY first
+	handle := windows.Handle(fd)
+
+	// Check if this is a real console before setting raw mode
+	var mode uint32
+	useConsoleInput := false
+	var orig *term.State
+
+	if err := windows.GetConsoleMode(handle, &mode); err == nil {
+		// Real Windows console - prefer CONIN$ and use native KEY_EVENT decoding
+		if f, err := os.OpenFile("CONIN$", os.O_RDWR, 0); err == nil {
+			fd = int(f.Fd())
+			conin = f
+		}
+
+		useConsoleInput = true
+		var err error
+		orig, err = term.MakeRaw(fd)
+		if err != nil {
+			return nil, err
+		}
+
+		// Disable VT input for console mode
+		const EnableVirtualTerminalInput = 0x0200
+		if mode&EnableVirtualTerminalInput != 0 {
+			_ = windows.SetConsoleMode(handle, mode&^EnableVirtualTerminalInput)
+		}
+	} else {
+		// PTY mode (Git Bash) - open /dev/tty and use stty for raw mode
+		f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+		if err != nil {
+			return nil, fmt.Errorf("PTY detected but /dev/tty not accessible: %w", err)
+		}
+		fd = int(f.Fd())
+		conin = f
+		orig = nil
+
+		// Use stty to set raw mode on /dev/tty
+		cmd := exec.Command("stty", "raw", "-echo", "-ixon", "min", "1", "time", "0")
+		cmd.Stdin = f
+		cmd.Stdout = f
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("stty failed: %w", err)
+		}
 	}
 
-	originalState, err := term.GetState(fd)
-	if err != nil {
-		return nil, err
-	}
-
-	return &TTY{fd, originalState, defaultTimeout}, nil
+	return &TTY{
+		fd:              fd,
+		orig:            orig,
+		timeout:         defaultTimeout,
+		useConsoleInput: useConsoleInput,
+		conin:           conin,
+		pending:         make([]byte, 0),
+		reader:          nil,
+	}, nil
 }
 
-// SetTimeout sets a timeout for reading a key
-func (tty *TTY) SetTimeout(d time.Duration) {
+// SetTimeout sets a timeout for reading a key.
+// Returns the previous timeout.
+func (tty *TTY) SetTimeout(d time.Duration) (time.Duration, error) {
+	saved := tty.timeout
 	tty.timeout = d
+	return saved, nil
 }
 
-// Close will restore the terminal state
+// Close restores the terminal
 func (tty *TTY) Close() {
-	if tty.originalState != nil {
-		term.Restore(tty.fd, tty.originalState)
+	tty.Restore()
+	if tty.conin != nil {
+		_ = tty.conin.Close()
+		tty.conin = nil
 	}
 }
 
-// asciiAndKeyCode processes input into an ASCII code or key code, handling multi-byte sequences like Ctrl-Insert
-func asciiAndKeyCode(tty *TTY) (ascii, keyCode int, err error) {
-	bytes := make([]byte, 6) // Use 6 bytes to cover longer sequences like Ctrl-Insert
-	var numRead int
-
-	// Set the terminal into raw mode
-	_, err = term.MakeRaw(tty.fd)
+// Poll checks if data is available
+func (tty *TTY) Poll(d time.Duration) (bool, error) {
+	handle := windows.Handle(os.Stdin.Fd())
+	ms := uint32(d.Milliseconds())
+	event, err := windows.WaitForSingleObject(handle, ms)
 	if err != nil {
-		return 0, 0, err
+		return false, err
 	}
-	defer term.Restore(tty.fd, tty.originalState)
-
-	// Read bytes from stdin
-	numRead, err = os.Stdin.Read(bytes)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	// Handle multi-byte sequences
-	switch {
-	case numRead == 1:
-		ascii = int(bytes[0])
-	case numRead == 3:
-		seq := [3]byte{bytes[0], bytes[1], bytes[2]}
-		if code, found := keyCodeLookup[seq]; found {
-			keyCode = code
-			return
-		}
-		// Not found, check if it's a printable character
-		r, _ := utf8.DecodeRune(bytes[:numRead])
-		if unicode.IsPrint(r) {
-			ascii = int(r)
-		}
-	case numRead == 4:
-		seq := [4]byte{bytes[0], bytes[1], bytes[2], bytes[3]}
-		if code, found := pageNavLookup[seq]; found {
-			keyCode = code
-			return
-		}
-	case numRead == 6:
-		seq := [6]byte{bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]}
-		if code, found := ctrlInsertLookup[seq]; found {
-			keyCode = code
-			return
-		}
-	default:
-		// Attempt to decode as UTF-8
-		r, _ := utf8.DecodeRune(bytes[:numRead])
-		if unicode.IsPrint(r) {
-			ascii = int(r)
-		}
-	}
-
-	return
+	return event == windows.WAIT_OBJECT_0, nil
 }
 
-// Key reads the keycode or ASCII code and avoids repeated keys
+// HasPendingInput reports whether ReadKey would return another key without
+// having to wait — either bytes are already buffered inside the TTY or more
+// input is available on the console right now. Matches the Unix semantics so
+// callers can use it for frame-skipping in a cross-platform way.
+func (tty *TTY) HasPendingInput() bool {
+	if len(tty.pending) > 0 {
+		return true
+	}
+	ok, err := tty.Poll(0)
+	if err != nil {
+		return false
+	}
+	return ok
+}
+
+// Key reads the keycode or ASCII code
 func (tty *TTY) Key() int {
 	ascii, keyCode, err := asciiAndKeyCode(tty)
 	if err != nil {
-		lastKey = 0
+		tty.lastKey = 0
 		return 0
 	}
 	var key int
@@ -167,31 +153,365 @@ func (tty *TTY) Key() int {
 	} else {
 		key = ascii
 	}
-	if key == lastKey {
-		lastKey = 0
+	if key == tty.lastKey {
+		tty.lastKey = 0
 		return 0
 	}
-	lastKey = key
+	tty.lastKey = key
 	return key
 }
 
-// String reads a string, handling key sequences and printable characters
-func (tty *TTY) String() string {
-	bytes := make([]byte, 6)
-	var numRead int
-
-	// Set the terminal into raw mode
-	_, err := term.MakeRaw(tty.fd)
-	if err != nil {
-		return ""
+// asciiAndKeyCode processes input into an ASCII code or key code
+func asciiAndKeyCode(tty *TTY) (ascii, keyCode int, err error) {
+	if tty.useConsoleInput {
+		return asciiAndKeyCodeConsole(tty)
 	}
-	defer term.Restore(tty.fd, tty.originalState)
 
-	// Read bytes from stdin
-	numRead, err = os.Stdin.Read(bytes)
+	// On Windows, we just read bytes. The terminal should be in raw mode sending VT sequences.
+	// We use the same logic as Unix but with our read implementation.
+
+	bytes := make([]byte, 6)
+
+	// Read with timeout
+	numRead, err := tty.readWithTimeout(bytes)
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if numRead > 0 {
+		tty.pending = append(tty.pending, bytes[:numRead]...)
+	}
+
+	if len(tty.pending) == 0 {
+		return 0, 0, nil
+	}
+
+	// Parse stateful pending input (important for Git Bash / PTY where ESC
+	// sequences often arrive split across reads).
+	switch tty.pending[0] {
+	case 27: // ESC prefix
+		if len(tty.pending) >= 3 {
+			seq3 := [3]byte{tty.pending[0], tty.pending[1], tty.pending[2]}
+			if code, found := keyCodeLookup[seq3]; found {
+				tty.pending = tty.pending[3:]
+				tty.escArmed = false
+				return 0, code, nil
+			}
+		}
+		if len(tty.pending) >= 4 {
+			seq4 := [4]byte{tty.pending[0], tty.pending[1], tty.pending[2], tty.pending[3]}
+			if code, found := pageNavLookup[seq4]; found {
+				tty.pending = tty.pending[4:]
+				tty.escArmed = false
+				return 0, code, nil
+			}
+		}
+		if len(tty.pending) >= 6 {
+			seq6 := [6]byte{tty.pending[0], tty.pending[1], tty.pending[2], tty.pending[3], tty.pending[4], tty.pending[5]}
+			if code, found := modKeyLookup[seq6]; found {
+				tty.pending = tty.pending[6:]
+				tty.escArmed = false
+				return 0, code, nil
+			}
+		}
+
+		// If this looks like an in-progress CSI sequence, wait for more bytes.
+		if len(tty.pending) == 1 || (len(tty.pending) == 2 && tty.pending[1] == '[') {
+			// First idle poll after ESC: arm. Second idle poll: emit ESC.
+			if numRead == 0 {
+				if tty.escArmed {
+					tty.pending = tty.pending[1:]
+					tty.escArmed = false
+					return 27, 0, nil
+				}
+				tty.escArmed = true
+			}
+			return 0, 0, nil
+		}
+
+		// Unknown ESC-prefixed sequence: emit ESC and keep remaining bytes.
+		tty.pending = tty.pending[1:]
+		tty.escArmed = false
+		return 27, 0, nil
+
+	default:
+		ascii = int(tty.pending[0])
+		tty.pending = tty.pending[1:]
+		tty.escArmed = false
+		return ascii, 0, nil
+	}
+}
+
+func asciiAndKeyCodeConsole(tty *TTY) (ascii, keyCode int, err error) {
+	handle := windows.Handle(tty.fd)
+
+	waitMS := uint32(windows.INFINITE)
+	if tty.timeout > 0 {
+		waitMS = uint32(tty.timeout.Milliseconds())
+		if waitMS == 0 {
+			waitMS = 1
+		}
+	}
+
+	event, err := windows.WaitForSingleObject(handle, waitMS)
+	if err != nil {
+		return 0, 0, err
+	}
+	if event == uint32(windows.WAIT_TIMEOUT) {
+		return 0, 0, nil
+	}
+
+	for {
+		// Check if events are available before reading to avoid blocking
+		var numEvents uint32
+		if err := windows.GetNumberOfConsoleInputEvents(handle, &numEvents); err != nil {
+			return 0, 0, err
+		}
+		if numEvents == 0 {
+			return 0, 0, nil
+		}
+
+		rec, n, readErr := readOneConsoleInputRecord(handle)
+		if readErr != nil {
+			return 0, 0, readErr
+		}
+		if n == 0 {
+			return 0, 0, nil
+		}
+
+		const keyEvent = 0x0001
+		if rec.EventType != keyEvent {
+			continue
+		}
+
+		ke := *(*KEY_EVENT_RECORD)(unsafe.Pointer(&rec.Event[0]))
+		if ke.bKeyDown == 0 {
+			continue
+		}
+
+		if ascii, keyCode = decodeConsoleKeyEvent(ke); ascii != 0 || keyCode != 0 {
+			return ascii, keyCode, nil
+		}
+	}
+}
+
+type KEY_EVENT_RECORD struct {
+	bKeyDown          int32
+	wRepeatCount      uint16
+	wVirtualKeyCode   uint16
+	wVirtualScanCode  uint16
+	uChar             [2]byte
+	dwControlKeyState uint32
+}
+
+type INPUT_RECORD struct {
+	EventType uint16
+	_         [2]byte // alignment padding
+	Event     [16]byte
+}
+
+func readOneConsoleInputRecord(handle windows.Handle) (INPUT_RECORD, uint32, error) {
+	modkernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	procReadConsoleInputW := modkernel32.NewProc("ReadConsoleInputW")
+
+	var rec [1]INPUT_RECORD
+	var n uint32
+	r1, _, _ := procReadConsoleInputW.Call(
+		uintptr(handle),
+		uintptr(unsafe.Pointer(&rec[0])),
+		1,
+		uintptr(unsafe.Pointer(&n)),
+	)
+	if r1 == 0 {
+		return INPUT_RECORD{}, 0, errors.New("ReadConsoleInputW failed")
+	}
+	return rec[0], n, nil
+}
+
+func decodeConsoleKeyEvent(ke KEY_EVENT_RECORD) (ascii, keyCode int) {
+	vk := ke.wVirtualKeyCode
+
+	// Ignore modifier-only events.
+	if vk == 0x10 || vk == 0x11 || vk == 0x12 {
+		return 0, 0
+	}
+
+	// Decode arrows/home/end/page keys to package key codes.
+	switch vk {
+	case 0x26: // VK_UP
+		return 0, 253
+	case 0x28: // VK_DOWN
+		return 0, 255
+	case 0x27: // VK_RIGHT
+		return 0, 254
+	case 0x25: // VK_LEFT
+		return 0, 252
+	case 0x24: // VK_HOME
+		return 0, 1
+	case 0x23: // VK_END
+		return 0, 5
+	case 0x21: // VK_PRIOR / Page Up
+		return 0, 251
+	case 0x22: // VK_NEXT / Page Down
+		return 0, 250
+	}
+
+	const (
+		leftAltPressed   = 0x0002
+		rightAltPressed  = 0x0001
+		leftCtrlPressed  = 0x0008
+		rightCtrlPressed = 0x0004
+	)
+	ctrlPressed := ke.dwControlKeyState&(leftCtrlPressed|rightCtrlPressed) != 0
+	altPressed := ke.dwControlKeyState&(leftAltPressed|rightAltPressed) != 0
+
+	if ctrlPressed && !altPressed {
+		if vk >= 'A' && vk <= 'Z' {
+			return int(vk-'A') + 1, 0
+		}
+	}
+
+	r := rune(ke.uChar[0]) | rune(ke.uChar[1])<<8
+	if r != 0 {
+		return int(r), 0
+	}
+
+	return 0, 0
+}
+
+// readWithTimeout implements reading with timeout on Windows
+func (tty *TTY) readWithTimeout(b []byte) (int, error) {
+	if tty.useConsoleInput {
+		return tty.readWithTimeoutConsole(b)
+	}
+	return tty.readWithTimeoutPTY(b)
+}
+
+// readWithTimeoutPTY reads from PTY (Git Bash) - simple ReadFile
+func (tty *TTY) readWithTimeoutPTY(b []byte) (int, error) {
+	if tty.timeout <= 0 {
+		var n uint32
+		err := windows.ReadFile(windows.Handle(tty.fd), b, &n, nil)
+		return int(n), err
+	}
+
+	handle := windows.Handle(tty.fd)
+	event, err := windows.WaitForSingleObject(handle, uint32(tty.timeout.Milliseconds()))
+	if err != nil {
+		return 0, err
+	}
+	if event == uint32(windows.WAIT_TIMEOUT) {
+		return 0, nil
+	}
+
+	var n uint32
+	err = windows.ReadFile(handle, b, &n, nil)
+	return int(n), err
+}
+
+// readWithTimeoutConsole reads from Windows console with event filtering
+func (tty *TTY) readWithTimeoutConsole(b []byte) (int, error) {
+	if tty.timeout <= 0 {
+		var n uint32
+		err := windows.ReadFile(windows.Handle(tty.fd), b, &n, nil)
+		return int(n), err
+	}
+
+	handle := windows.Handle(tty.fd)
+	event, err := windows.WaitForSingleObject(handle, uint32(tty.timeout.Milliseconds()))
+	if err != nil {
+		return 0, err
+	}
+	if event == uint32(windows.WAIT_TIMEOUT) {
+		return 0, nil
+	}
+
+	type KEY_EVENT_RECORD struct {
+		bKeyDown          int32
+		wRepeatCount      uint16
+		wVirtualKeyCode   uint16
+		wVirtualScanCode  uint16
+		uChar             [2]byte
+		dwControlKeyState uint32
+	}
+	type INPUT_RECORD struct {
+		EventType uint16
+		_         [2]byte
+		Event     [16]byte
+	}
+
+	modkernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	procPeekConsoleInputW := modkernel32.NewProc("PeekConsoleInputW")
+	procReadConsoleInputW := modkernel32.NewProc("ReadConsoleInputW")
+
+	for {
+		var numEvents uint32
+		err = windows.GetNumberOfConsoleInputEvents(handle, &numEvents)
+		if err != nil {
+			break
+		}
+		if numEvents == 0 {
+			return 0, nil
+		}
+
+		var events [1]INPUT_RECORD
+		var numRead uint32
+
+		r1, _, _ := procPeekConsoleInputW.Call(uintptr(handle), uintptr(unsafe.Pointer(&events[0])), 1, uintptr(unsafe.Pointer(&numRead)))
+		if r1 == 0 {
+			break
+		}
+		if numRead == 0 {
+			return 0, nil
+		}
+
+		first := events[0]
+		shouldConsume := false
+
+		const KEY_EVENT = 0x0001
+
+		if first.EventType == KEY_EVENT {
+			ke := *(*KEY_EVENT_RECORD)(unsafe.Pointer(&first.Event[0]))
+
+			if ke.bKeyDown == 0 {
+				shouldConsume = true
+			} else {
+				vk := ke.wVirtualKeyCode
+				if vk == 0x10 || vk == 0x11 || vk == 0x12 {
+					if ke.uChar[0] == 0 && ke.uChar[1] == 0 {
+						shouldConsume = true
+					}
+				}
+			}
+		} else {
+			shouldConsume = true
+		}
+
+		if shouldConsume {
+			var dummy [1]INPUT_RECORD
+			var n uint32
+			procReadConsoleInputW.Call(uintptr(handle), uintptr(unsafe.Pointer(&dummy[0])), 1, uintptr(unsafe.Pointer(&n)))
+			continue
+		}
+
+		break
+	}
+
+	var n uint32
+	err = windows.ReadFile(handle, b, &n, nil)
+	return int(n), err
+}
+
+// ReadKey reads a key sequence (or printable character) from the TTY.
+func (tty *TTY) ReadKey() string {
+	bytes := make([]byte, 6)
+	tty.SetTimeout(0)
+	numRead, err := tty.readWithTimeout(bytes)
 	if err != nil || numRead == 0 {
 		return ""
 	}
+
 	switch {
 	case numRead == 1:
 		r := rune(bytes[0])
@@ -204,7 +524,6 @@ func (tty *TTY) String() string {
 		if str, found := keyStringLookup[seq]; found {
 			return str
 		}
-		// Attempt to interpret as UTF-8 string
 		return string(bytes[:numRead])
 	case numRead == 4:
 		seq := [4]byte{bytes[0], bytes[1], bytes[2], bytes[3]}
@@ -214,176 +533,133 @@ func (tty *TTY) String() string {
 		return string(bytes[:numRead])
 	case numRead == 6:
 		seq := [6]byte{bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]}
-		if str, found := ctrlInsertStringLookup[seq]; found {
+		if str, found := modKeyStringLookup[seq]; found {
 			return str
 		}
 		fallthrough
 	default:
-		// For simplicity, just return what we read
 		return string(bytes[:numRead])
 	}
-	return string(bytes[:numRead])
 }
 
-// Rune reads a rune, handling special sequences for arrows, Home, End, etc.
+// Rune reads a rune
 func (tty *TTY) Rune() rune {
-	bytes := make([]byte, 6)
-	var numRead int
-
-	// Set the terminal into raw mode
-	_, err := term.MakeRaw(tty.fd)
+	ascii, keyCode, err := asciiAndKeyCode(tty)
 	if err != nil {
 		return rune(0)
 	}
-	defer term.Restore(tty.fd, tty.originalState)
-
-	// Read bytes from stdin
-	numRead, err = os.Stdin.Read(bytes)
-	if err != nil || numRead == 0 {
-		return rune(0)
+	if ascii != 0 {
+		return rune(ascii)
 	}
-
-	switch {
-	case numRead == 1:
-		return rune(bytes[0])
-	case numRead == 3:
-		seq := [3]byte{bytes[0], bytes[1], bytes[2]}
-		if str, found := keyStringLookup[seq]; found {
-			return []rune(str)[0]
+	if keyCode != 0 {
+		switch keyCode {
+		case 253:
+			return '↑'
+		case 255:
+			return '↓'
+		case 254:
+			return '→'
+		case 252:
+			return '←'
+		case 1:
+			return '⇱'
+		case 5:
+			return '⇲'
+		case 251:
+			return '⇞'
+		case 250:
+			return '⇟'
 		}
-		// Attempt to interpret as UTF-8 rune
-		r, _ := utf8.DecodeRune(bytes[:numRead])
-		return r
-	case numRead == 4:
-		seq := [4]byte{bytes[0], bytes[1], bytes[2], bytes[3]}
-		if str, found := pageStringLookup[seq]; found {
-			return []rune(str)[0]
-		}
-		r, _ := utf8.DecodeRune(bytes[:numRead])
-		return r
-	case numRead == 6:
-		seq := [6]byte{bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]}
-		if str, found := ctrlInsertStringLookup[seq]; found {
-			return []rune(str)[0]
-		}
-		r, _ := utf8.DecodeRune(bytes[:numRead])
-		return r
-	default:
-		// Attempt to interpret as UTF-8 rune
-		r, _ := utf8.DecodeRune(bytes[:numRead])
-		return r
 	}
+	return rune(0)
 }
 
 // RawMode switches the terminal to raw mode
 func (tty *TTY) RawMode() {
-	_, _ = term.MakeRaw(tty.fd)
+	if tty.useConsoleInput {
+		term.MakeRaw(tty.fd)
+	}
+	// For PTY mode, raw mode was already set in NewTTY
 }
 
-// NoBlock sets the terminal to cbreak mode (no-op for golang.org/x/term)
+// NoBlock - Windows doesn't easily support non-blocking ReadFile without overlapped IO.
+// But we use WaitForSingleObject in readWithTimeout, so we can simulate it by setting timeout to very small.
 func (tty *TTY) NoBlock() {
-	// No-op for golang.org/x/term - raw mode handles this
+	tty.SetTimeout(1 * time.Millisecond)
 }
 
 // Restore the terminal to its original state
 func (tty *TTY) Restore() {
-	if tty.originalState != nil {
-		term.Restore(tty.fd, tty.originalState)
+	if tty.orig != nil {
+		term.Restore(tty.fd, tty.orig)
 	}
 }
 
-// Flush flushes the terminal output (no-op)
-func (tty *TTY) Flush() {
-	// No-op for golang.org/x/term
+// RestoreNoFlush restores the terminal without flushing pending input
+func (tty *TTY) RestoreNoFlush() {
+	tty.Restore() // Windows Restore does not flush input
 }
 
-// WriteString writes a string to stdout
+// Flush discards pending input/output
+func (tty *TTY) Flush() {
+	// Windows FlushConsoleInputBuffer
+	windows.FlushConsoleInputBuffer(windows.Handle(tty.fd))
+}
+
+// WriteString writes a string to the terminal
 func (tty *TTY) WriteString(s string) error {
 	_, err := os.Stdout.WriteString(s)
 	return err
 }
 
-// ReadString reads a string from the TTY with timeout
+// ReadString reads all available data
 func (tty *TTY) ReadString() (string, error) {
-	// Set up a timeout channel
-	timeout := time.After(100 * time.Millisecond) // Short timeout for terminal responses
-	resultChan := make(chan string, 1)
-	errorChan := make(chan error, 1)
-
-	go func() {
-		// Set raw mode temporarily
-		_, err := term.MakeRaw(tty.fd)
-		if err != nil {
-			errorChan <- err
-			return
+	var result []byte
+	buf := make([]byte, 128)
+	// Temporarily set a short read timeout
+	tty.SetTimeout(100 * time.Millisecond)
+	defer tty.SetTimeout(tty.timeout)
+	for {
+		n, err := tty.readWithTimeout(buf)
+		if n > 0 {
+			result = append(result, buf[:n]...)
 		}
-		defer term.Restore(tty.fd, tty.originalState)
-
-		var result []byte
-		buffer := make([]byte, 1)
-
-		for {
-			n, err := os.Stdin.Read(buffer)
-			if err != nil {
-				errorChan <- err
-				return
-			}
-			if n > 0 {
-				// For terminal responses, look for bell character (0x07) which terminates OSC sequences
-				if buffer[0] == 0x07 || buffer[0] == '\a' {
-					resultChan <- string(result)
-					return
-				}
-				// Also break on ESC sequence end for some terminals
-				if len(result) > 0 && buffer[0] == '\\' && result[len(result)-1] == 0x1b {
-					resultChan <- string(result)
-					return
-				}
-				result = append(result, buffer[0])
-
-				// Prevent infinite reading - limit response size
-				if len(result) > 512 {
-					resultChan <- string(result)
-					return
-				}
-			}
+		if err != nil || n == 0 {
+			break
 		}
-	}()
-
-	select {
-	case result := <-resultChan:
-		return result, nil
-	case err := <-errorChan:
-		return "", err
-	case <-timeout:
-		// Timeout - return empty string (no error, just no response from terminal)
-		return "", nil
 	}
+	if len(result) == 0 {
+		return "", errors.New("no data read from TTY")
+	}
+	return string(result), nil
 }
 
-// PrintRawBytes for debugging raw byte sequences
-func (tty *TTY) PrintRawBytes() {
-	bytes := make([]byte, 6)
-	var numRead int
-
-	// Set the terminal into raw mode
-	_, err := term.MakeRaw(tty.fd)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
+// ReadStringKeepTiming reads all available data while preserving the caller's timeout value.
+func (tty *TTY) ReadStringKeepTiming() (string, error) {
+	var result []byte
+	buf := make([]byte, 128)
+	savedTimeout := tty.timeout
+	tty.SetTimeout(100 * time.Millisecond)
+	defer tty.SetTimeout(savedTimeout)
+	for {
+		n, err := tty.readWithTimeout(buf)
+		if n > 0 {
+			result = append(result, buf[:n]...)
+		}
+		if err != nil || n == 0 {
+			break
+		}
 	}
-	defer term.Restore(tty.fd, tty.originalState)
-
-	// Read bytes from stdin
-	numRead, err = os.Stdin.Read(bytes)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
+	if len(result) == 0 {
+		return "", errors.New("no data read from TTY")
 	}
-	fmt.Printf("Raw bytes: %v\n", bytes[:numRead])
+	return string(result), nil
 }
 
-// ASCII returns the ASCII code of the key pressed
+// PrintRawBytes ...
+func (tty *TTY) PrintRawBytes() {}
+
+// ASCII ...
 func (tty *TTY) ASCII() int {
 	ascii, _, err := asciiAndKeyCode(tty)
 	if err != nil {
@@ -392,7 +668,7 @@ func (tty *TTY) ASCII() int {
 	return ascii
 }
 
-// KeyCode returns the key code of the key pressed
+// KeyCode ...
 func (tty *TTY) KeyCode() int {
 	_, keyCode, err := asciiAndKeyCode(tty)
 	if err != nil {
@@ -401,18 +677,16 @@ func (tty *TTY) KeyCode() int {
 	return keyCode
 }
 
-// WaitForKey waits for ctrl-c, Return, Esc, Space, or 'q' to be pressed
+// WaitForKey ...
 func WaitForKey() {
-	// Get a new TTY and start reading keypresses in a loop
-	r, err := NewTTY()
-	if err != nil {
-		panic(err)
-	}
-	defer r.Close()
-	for {
-		switch r.Key() {
-		case 3, 13, 27, 32, 113:
-			return
+	tty, _ := NewTTY()
+	if tty != nil {
+		defer tty.Close()
+		for {
+			k := tty.Key()
+			if k == 3 || k == 13 || k == 27 || k == 32 || k == 113 {
+				return
+			}
 		}
 	}
 }

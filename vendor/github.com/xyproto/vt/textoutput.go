@@ -2,6 +2,7 @@ package vt
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -24,7 +25,7 @@ type TextOutput struct {
 }
 
 // EnvNoColor respects the NO_COLOR environment variable
-var EnvNoColor = env.Bool("NO_COLOR")
+var EnvNoColor = env.Bool("NO_COLOR") || env.Str("TERM") == "vt100"
 
 // NewTextOutput can initialize a new TextOutput struct,
 // which can have colors turned on or off and where the
@@ -37,6 +38,16 @@ func NewTextOutput(color, enabled bool) *TextOutput {
 	o := &TextOutput{nil, nil, color, enabled}
 	o.initializeTagReplacers()
 	return o
+}
+
+// DisableColors will enable color output
+func (o *TextOutput) EnableColors() {
+	o.color = true
+}
+
+// DisableColors will disable color output
+func (o *TextOutput) DisableColors() {
+	o.color = false
 }
 
 // New can initialize a new TextOutput struct,
@@ -58,24 +69,76 @@ func (o *TextOutput) OutputTags(colors ...string) {
 	}
 }
 
+func Println(msg ...any)                             { New().Println(msg...) }
+func Print(msg ...any)                               { New().Print(msg...) }
+func Printf(format string, msg ...any)               { New().Printf(format, msg...) }
+func Eprintln(msg ...any)                            { New().Eprintln(msg...) }
+func Eprint(msg ...any)                              { New().Eprint(msg...) }
+func Eprintf(format string, msg ...any)              { New().Eprintf(format, msg...) }
+func Fprintln(w io.Writer, msg ...any)               { New().Fprintln(w, msg...) }
+func Fprint(w io.Writer, msg ...any)                 { New().Fprint(w, msg...) }
+func Fprintf(w io.Writer, format string, msg ...any) { New().Fprintf(w, format, msg...) }
+
 // Println writes a message to stdout if output is enabled
-func (o *TextOutput) Println(msg ...interface{}) {
+func (o *TextOutput) Println(msg ...any) {
 	if o.enabled {
 		fmt.Println(o.InterfaceTags(msg...))
 	}
 }
 
+// Eprintln writes a message to stderr if output is enabled
+func (o *TextOutput) Eprintln(msg ...any) {
+	if o.enabled {
+		fmt.Fprintln(os.Stderr, o.InterfaceTags(msg...))
+	}
+}
+
+// Fprintln writes a message to the given io.Writer, if output is enabled
+func (o *TextOutput) Fprintln(w io.Writer, msg ...any) {
+	if o.enabled {
+		fmt.Fprintln(w, o.InterfaceTags(msg...))
+	}
+}
+
 // Print writes a message to stdout if output is enabled
-func (o *TextOutput) Print(msg ...interface{}) {
+func (o *TextOutput) Print(msg ...any) {
 	if o.enabled {
 		fmt.Print(o.InterfaceTags(msg...))
 	}
 }
 
+// Eprint writes a message to stderr if output is enabled
+func (o *TextOutput) Eprint(msg ...any) {
+	if o.enabled {
+		fmt.Fprint(os.Stderr, o.InterfaceTags(msg...))
+	}
+}
+
+// Fprint writes a message to the given io.Writer, if output is enabled
+func (o *TextOutput) Fprint(w io.Writer, msg ...any) {
+	if o.enabled {
+		fmt.Fprint(w, o.InterfaceTags(msg...))
+	}
+}
+
 // Printf writes a formatted message to stdout if output is enabled
-func (o *TextOutput) Printf(format string, args ...interface{}) {
+func (o *TextOutput) Printf(format string, args ...any) {
 	if o.enabled {
 		fmt.Print(o.Tags(fmt.Sprintf(format, args...)))
+	}
+}
+
+// Eprintf writes a formatted message to stderr if output is enabled
+func (o *TextOutput) Eprintf(format string, args ...any) {
+	if o.enabled {
+		fmt.Fprint(os.Stderr, o.Tags(fmt.Sprintf(format, args...)))
+	}
+}
+
+// Fprintf writes a formatted message to the given io.Writer, if output is enabled
+func (o *TextOutput) Fprintf(w io.Writer, format string, args ...any) {
+	if o.enabled {
+		fmt.Fprint(w, o.Tags(fmt.Sprintf(format, args...)))
 	}
 }
 
@@ -87,6 +150,11 @@ func (o *TextOutput) Disable() {
 // Enable text output
 func (o *TextOutput) Enable() {
 	o.enabled = true
+}
+
+// Enabled checks if the text output is enabled
+func (o *TextOutput) Enabled() bool {
+	return o.enabled
 }
 
 // Err writes an error message in red to stderr if output is enabled
@@ -125,7 +193,7 @@ func (o *TextOutput) Tags(colors ...string) string {
 }
 
 // InterfaceTags is the same as LightTags, but with interfaces
-func (o *TextOutput) InterfaceTags(colors ...interface{}) string {
+func (o *TextOutput) InterfaceTags(colors ...any) string {
 	var sb strings.Builder
 	for _, color := range colors {
 		if colorString, ok := color.(string); ok {
@@ -143,79 +211,86 @@ func (o *TextOutput) DarkTags(colors ...string) string {
 	return o.darkReplacer.Replace(strings.Join(colors, ""))
 }
 
-func (o *TextOutput) initializeTagReplacers() {
-	// Initialize tag replacement tables, with as few memory allocations as possible (no append)
+// buildTagReplacer builds a strings.Replacer that substitutes <color>/</color>
+// HTML-like tags in text. Each key in colorMap generates four pairs covering
+// both <key>/</key> and <Key>/</Key>. When enabled is false every tag is
+// replaced with an empty string (strip-only mode).
+func buildTagReplacer(colorMap map[string]AttributeColor, enabled bool) *strings.Replacer {
 	off := NoColor
-	rs := make([]string, len(LightColorMap)*4+2)
+	rs := make([]string, len(colorMap)*8+2)
 	i := 0
-	if o.color {
-		for key, value := range LightColorMap {
-			rs[i] = "<" + key + ">"
-			i++
-			rs[i] = value.String()
-			i++
-			rs[i] = "</" + key + ">"
-			i++
-			rs[i] = off
-			i++
+	for key, value := range colorMap {
+		titled := strings.ToUpper(key[:1]) + key[1:]
+		var esc, reset string
+		if enabled {
+			esc = value.String()
+			reset = off
 		}
-		rs[i] = "<off>"
-		i++
-		rs[i] = off
-	} else {
-		for key := range LightColorMap {
-			rs[i] = "<" + key + ">"
-			i++
-			rs[i] = ""
-			i++
-			rs[i] = "</" + key + ">"
-			i++
-			rs[i] = ""
-			i++
-		}
-		rs[i] = "<off>"
-		i++
-		rs[i] = ""
+		rs[i] = "<" + key + ">"
+		rs[i+1] = esc
+		rs[i+2] = "</" + key + ">"
+		rs[i+3] = reset
+		rs[i+4] = "<" + titled + ">"
+		rs[i+5] = esc
+		rs[i+6] = "</" + titled + ">"
+		rs[i+7] = reset
+		i += 8
 	}
-	o.lightReplacer = strings.NewReplacer(rs...)
-	// Initialize the replacer for the dark color scheme, while reusing the rs slice
-	i = 0
-	if o.color {
-		for key, value := range DarkColorMap {
-			rs[i] = "<" + key + ">"
-			i++
-			rs[i] = value.String()
-			i++
-			rs[i] = "</" + key + ">"
-			i++
-			rs[i] = off
-			i++
-		}
+	if enabled {
 		rs[i] = "<off>"
-		i++
-		rs[i] = off
+		rs[i+1] = off
 	} else {
-		for key := range DarkColorMap {
-			rs[i] = "<" + key + ">"
-			i++
-			rs[i] = ""
-			i++
-			rs[i] = "</" + key + ">"
-			i++
-			rs[i] = ""
-			i++
-		}
 		rs[i] = "<off>"
-		i++
-		rs[i] = ""
+		rs[i+1] = ""
 	}
-	o.darkReplacer = strings.NewReplacer(rs...)
+	return strings.NewReplacer(rs...)
+}
+
+// Tag replacers are built once at package init and shared across all TextOutput
+// instances; building them is O(|colorMap|) and involves string allocations, so
+// doing it once avoids repeated work on every New() call.
+var (
+	cachedLightOnReplacer  *strings.Replacer
+	cachedLightOffReplacer *strings.Replacer
+	cachedDarkOnReplacer   *strings.Replacer
+	cachedDarkOffReplacer  *strings.Replacer
+)
+
+func init() {
+	cachedLightOnReplacer = buildTagReplacer(LightColorMap, true)
+	cachedLightOffReplacer = buildTagReplacer(LightColorMap, false)
+	cachedDarkOnReplacer = buildTagReplacer(DarkColorMap, true)
+	cachedDarkOffReplacer = buildTagReplacer(DarkColorMap, false)
+}
+
+// RebuildTagReplacers rebuilds the cached tag replacers from the current
+// DarkColorMap and LightColorMap. Call this after adding entries to either map
+// so that the new entries are recognized by DarkTags and LightTags.
+func RebuildTagReplacers() {
+	cachedLightOnReplacer = buildTagReplacer(LightColorMap, true)
+	cachedLightOffReplacer = buildTagReplacer(LightColorMap, false)
+	cachedDarkOnReplacer = buildTagReplacer(DarkColorMap, true)
+	cachedDarkOffReplacer = buildTagReplacer(DarkColorMap, false)
+}
+
+// initializeTagReplacers assigns pre-built singleton replacers to this
+// TextOutput based on whether colors are enabled.
+func (o *TextOutput) initializeTagReplacers() {
+	if o.color {
+		o.lightReplacer = cachedLightOnReplacer
+		o.darkReplacer = cachedDarkOnReplacer
+	} else {
+		o.lightReplacer = cachedLightOffReplacer
+		o.darkReplacer = cachedDarkOffReplacer
+	}
 }
 
 // ExtractToSlice iterates over an ANSI encoded string, parsing out color codes and places it in
 // a slice of CharAttribute. Each CharAttribute in the slice represents a character in the
 // input string and its corresponding color attributes. This function handles escaping sequences
-// and converts ANSI color codes to AttributeColor structs.
+// and converts ANSI color codes to AttributeColor structs, including 24-bit truecolor sequences
+// of the form ESC[38;2;R;G;Bm (foreground) and ESC[48;2;R;G;Bm (background), 256-color sequences
+// of the form ESC[38;5;Nm (foreground) and ESC[48;5;Nm (background), and standard ANSI codes.
 // The returned uint is the number of stored elements.
 func (o *TextOutput) ExtractToSlice(s string, pcc *[]CharAttribute) uint {
 	var (
@@ -229,21 +304,30 @@ func (o *TextOutput) ExtractToSlice(s string, pcc *[]CharAttribute) uint {
 		case escaped && r == 'm':
 			colorAttributes := strings.Split(strings.TrimPrefix(colorcode.String(), "["), ";")
 			if len(colorAttributes) != 1 || colorAttributes[0] != "0" {
-				var primaryAttr, secondaryAttr AttributeColor
-				for i, attribute := range colorAttributes {
-					if attributeNumber, err := strconv.Atoi(attribute); err == nil {
-						if i == 0 {
-							primaryAttr = AttributeColor(attributeNumber)
-						} else {
-							secondaryAttr = AttributeColor(attributeNumber)
-							break // Only handle two attributes for now
-						}
+				// Parse the numeric fields up front
+				nums := make([]int, 0, len(colorAttributes))
+				for _, attribute := range colorAttributes {
+					if n, err := strconv.Atoi(attribute); err == nil {
+						nums = append(nums, n)
 					}
 				}
-				if secondaryAttr != 0 {
-					currentColor = primaryAttr.Combine(secondaryAttr)
-				} else {
-					currentColor = primaryAttr
+				switch {
+				case len(nums) >= 5 && nums[0] == 38 && nums[1] == 2:
+					// ESC[38;2;R;G;Bm — 24-bit truecolor foreground
+					currentColor = TrueColor(uint8(nums[2]), uint8(nums[3]), uint8(nums[4]))
+				case len(nums) >= 5 && nums[0] == 48 && nums[1] == 2:
+					// ESC[48;2;R;G;Bm — 24-bit truecolor background
+					currentColor = TrueBackground(uint8(nums[2]), uint8(nums[3]), uint8(nums[4]))
+				case len(nums) >= 3 && nums[0] == 38 && nums[1] == 5:
+					// ESC[38;5;Nm — 256-color foreground
+					currentColor = Color256(uint8(nums[2]))
+				case len(nums) >= 3 && nums[0] == 48 && nums[1] == 5:
+					// ESC[48;5;Nm — 256-color background
+					currentColor = Background256(uint8(nums[2]))
+				case len(nums) == 2:
+					currentColor = AttributeColor(nums[0]).Combine(AttributeColor(nums[1]))
+				case len(nums) == 1:
+					currentColor = AttributeColor(nums[0])
 				}
 			} else {
 				currentColor = AttributeColor(0)
@@ -253,7 +337,13 @@ func (o *TextOutput) ExtractToSlice(s string, pcc *[]CharAttribute) uint {
 		case r == '\033':
 			escaped = true
 		case escaped && r != 'm':
-			colorcode.WriteRune(r)
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				// A letter other than 'm' terminates a non-SGR escape sequence; discard it
+				colorcode.Reset()
+				escaped = false
+			} else {
+				colorcode.WriteRune(r)
+			}
 		default:
 			if counter >= uint(len(*pcc)) {
 				// Extend the slice

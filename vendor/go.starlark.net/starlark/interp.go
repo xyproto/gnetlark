@@ -5,8 +5,7 @@ package starlark
 import (
 	"fmt"
 	"os"
-	"sync/atomic"
-	"unsafe"
+	"slices"
 
 	"go.starlark.net/internal/compile"
 	"go.starlark.net/internal/spell"
@@ -24,7 +23,17 @@ func (fn *Function) CallInternal(thread *Thread, args Tuple, kwargs []Tuple) (Va
 	// but allows CALL to avoid a copy.
 
 	f := fn.funcode
-	if !f.Prog.Recursion {
+	if f.Prog.Recursion {
+		// prevent stack overflow
+		//
+		// Each CallInternal recursion (via Call) uses ~1.4KB,
+		// but the stack limit is on the order of 1GB, so a
+		// maximum of about 700K recursive calls is possible.
+		// Limit it to much less here.
+		if len(thread.stack) > 100_000 {
+			return nil, fmt.Errorf("Starlark stack overflow")
+		}
+	} else {
 		// detect recursion
 		for _, fr := range thread.stack[:len(thread.stack)-1] {
 			// We look for the same function code,
@@ -105,8 +114,8 @@ loop:
 				thread.Cancel("too many steps")
 			}
 		}
-		if reason := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&thread.cancelReason))); reason != nil {
-			err = fmt.Errorf("Starlark computation cancelled: %s", *(*string)(reason))
+		if reason := thread.cancelReason.Load(); reason != nil {
+			err = fmt.Errorf("Starlark computation cancelled: %s", *reason)
 			break loop
 		}
 
@@ -300,7 +309,7 @@ loop:
 				kvpairs = make([]Tuple, 0, nkvpairs)
 				kvpairsAlloc := make(Tuple, 2*nkvpairs) // allocate a single backing array
 				sp -= 2 * nkvpairs
-				for i := 0; i < nkvpairs; i++ {
+				for i := range nkvpairs {
 					pair := kvpairsAlloc[:2:2]
 					kvpairsAlloc = kvpairsAlloc[2:]
 					pair[0] = stack[sp+2*i]   // name
@@ -317,7 +326,7 @@ loop:
 				}
 				items := dict.Items()
 				for _, item := range items {
-					if _, ok := item[0].(String); !ok {
+					if !is[String](item[0]) {
 						err = fmt.Errorf("keywords must be strings, not %s", item[0].Type())
 						break loop
 					}
@@ -338,8 +347,8 @@ loop:
 				// Copy positional arguments into a new array,
 				// unless the callee is another Starlark function,
 				// in which case it can be trusted not to mutate them.
-				if _, ok := stack[sp-1].(*Function); !ok || args != nil {
-					positional = append(Tuple(nil), positional...)
+				if !is[*Function](stack[sp-1]) || args != nil {
+					positional = slices.Clone(positional)
 				}
 			}
 			if args != nil {
@@ -572,7 +581,7 @@ loop:
 				break loop
 			}
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				from := string(stack[sp-1-i].(String))
 				v, ok := dict[from]
 				if !ok {

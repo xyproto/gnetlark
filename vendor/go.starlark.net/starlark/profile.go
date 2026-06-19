@@ -83,7 +83,7 @@ import (
 //
 // StartProfile must not be called concurrently with Starlark execution.
 func StartProfile(w io.Writer) error {
-	if !atomic.CompareAndSwapUint32(&profiler.on, 0, 1) {
+	if !profiler.on.CompareAndSwap(false, true) {
 		return fmt.Errorf("profiler already running")
 	}
 
@@ -113,14 +113,14 @@ func StopProfile() error {
 
 	profiler.done = nil
 	profiler.events = nil
-	atomic.StoreUint32(&profiler.on, 0)
+	profiler.on.Store(false)
 
 	return err
 }
 
 // globals
 var profiler struct {
-	on     uint32          // nonzero => profiler running
+	on     atomic.Bool     // true => profiler running
 	events chan *profEvent // profile events from interpreter threads
 	done   chan error      // indicates profiler goroutine is ready
 }
@@ -298,7 +298,7 @@ func profile(w io.Writer) {
 		// TODO(adonovan): fix: try making this cleaner by treating
 		// each bytecode segment as a Profile.Mapping.
 		pcAddr := fnAddr
-		if _, ok := fr.fn.(*Function); ok {
+		if is[*Function](fr.fn) {
 			pcAddr = (pcAddr << 16) ^ uintptr(fr.pc)
 		}
 
@@ -401,7 +401,7 @@ func profFuncAddr(fn Callable) uintptr {
 
 	// User-defined callable types are typically of
 	// kind pointer-to-struct. Handle them specially.
-	if v := reflect.ValueOf(fn); v.Type().Kind() == reflect.Ptr {
+	if v := reflect.ValueOf(fn); v.Type().Kind() == reflect.Pointer {
 		return v.Pointer()
 	}
 

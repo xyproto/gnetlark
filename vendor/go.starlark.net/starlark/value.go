@@ -73,6 +73,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -275,7 +276,7 @@ var (
 //	iter := seq.Iterate()
 //	defer iter.Done()
 //	var elem Value
-//	for iter.Next(elem) {
+//	for iter.Next(&elem) {
 //		...
 //	}
 //
@@ -806,7 +807,7 @@ func (fn *Function) ParamDefault(i int) Value {
 	}
 
 	dflt := fn.defaults[i-firstOptIdx]
-	if _, ok := dflt.(mandatory); ok {
+	if is[mandatory](dflt) {
 		return nil
 	}
 	return dflt
@@ -1208,10 +1209,10 @@ func (x *Set) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error
 	y := y_.(*Set)
 	switch op {
 	case syntax.EQL:
-		ok, err := setsEqual(x, y, depth)
+		ok, err := setsEqual(x, y)
 		return ok, err
 	case syntax.NEQ:
-		ok, err := setsEqual(x, y, depth)
+		ok, err := setsEqual(x, y)
 		return !ok, err
 	case syntax.GE: // superset
 		if x.Len() < y.Len() {
@@ -1246,7 +1247,7 @@ func (x *Set) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error
 	}
 }
 
-func setsEqual(x, y *Set, depth int) (bool, error) {
+func setsEqual(x, y *Set) (bool, error) {
 	if x.Len() != y.Len() {
 		return false, nil
 	}
@@ -1256,18 +1257,6 @@ func setsEqual(x, y *Set, depth int) (bool, error) {
 		}
 	}
 	return true, nil
-}
-
-func setFromIterator(iter Iterator) (*Set, error) {
-	var x Value
-	set := new(Set)
-	for iter.Next(&x) {
-		err := set.Insert(x)
-		if err != nil {
-			return set, err
-		}
-	}
-	return set, nil
 }
 
 func (s *Set) clone() *Set {
@@ -1359,7 +1348,7 @@ func (s *Set) SymmetricDifference(other Iterator) (Value, error) {
 			return nil, err
 		}
 		if !found {
-			diff.Insert(x)
+			diff.Insert(x) // can't fail
 		}
 	}
 	return diff, nil
@@ -1472,12 +1461,7 @@ func writeValue(out *strings.Builder, x Value, path []Value) {
 }
 
 func pathContains(path []Value, x Value) bool {
-	for _, y := range path {
-		if x == y {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(path, x)
 }
 
 // CompareLimit is the depth limit on recursive comparison operations such as == and <.

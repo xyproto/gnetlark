@@ -1,0 +1,112 @@
+//go:build plan9
+
+package vt
+
+import (
+	"errors"
+	"fmt"
+	"time"
+)
+
+var (
+	defaultTimeout = 100 * time.Millisecond // VTIME resolution is 1 decisecond; anything less clamps to 100ms
+)
+
+// StubTerm is a stub for term.Term on unsupported platforms
+type StubTerm struct{}
+
+// Available returns 0 bytes available (stub)
+func (s *StubTerm) Available() (int, error) {
+	return 0, errors.New("TTY is not supported on this platform")
+}
+
+// Read is a stub that returns an error
+func (s *StubTerm) Read(p []byte) (int, error) {
+	return 0, errors.New("TTY is not supported on this platform")
+}
+
+// TTY represents a terminal device
+type TTY struct {
+	timeout time.Duration
+}
+
+// NewTTY opens the terminal in raw mode (stub for unsupported platforms)
+func NewTTY() (*TTY, error) {
+	return nil, errors.New("TTY is not supported on this platform")
+}
+
+// SetTimeout sets a timeout for reading a key.
+// Returns the previous timeout.
+func (tty *TTY) SetTimeout(d time.Duration) (time.Duration, error) {
+	saved := tty.timeout
+	tty.timeout = d
+	return saved, nil
+}
+
+// Close will restore and close the raw terminal
+func (tty *TTY) Close() {}
+
+// Poll checks if data is available (stub)
+func (tty *TTY) Poll(d time.Duration) (bool, error) { return true, nil }
+
+// HasPendingInput reports whether ReadKey would return another key without
+// blocking (stub: always reports false so frame skipping is inactive)
+func (tty *TTY) HasPendingInput() bool { return false }
+
+// Key reads the keycode or ASCII code
+func (tty *TTY) Key() int { return 0 }
+
+// ReadKey reads a key sequence from the TTY.
+func (tty *TTY) ReadKey() string { return "" }
+
+// Rune reads a rune from the TTY
+func (tty *TTY) Rune() rune { return rune(0) }
+
+// RawMode switches the terminal to raw mode
+func (tty *TTY) RawMode() {}
+
+// NoBlock sets the terminal to non-blocking mode
+func (tty *TTY) NoBlock() {}
+
+// Restore the terminal to its original state
+func (tty *TTY) Restore() {}
+
+// RestoreNoFlush restores the terminal to its original state without flushing pending input
+func (tty *TTY) RestoreNoFlush() {}
+
+// Flush flushes the terminal output
+func (tty *TTY) Flush() {}
+
+// Term returns a stub terminal reader
+func (tty *TTY) Term() *StubTerm {
+	return &StubTerm{}
+}
+
+// WriteString writes a string to the terminal
+func (tty *TTY) WriteString(s string) error {
+	return errors.New("TTY is not supported on this platform")
+}
+
+// ReadString reads a string from the TTY
+func (tty *TTY) ReadString() (string, error) {
+	return "", errors.New("TTY is not supported on this platform")
+}
+
+// ReadStringKeepTiming reads a string from the TTY while preserving timeout settings.
+func (tty *TTY) ReadStringKeepTiming() (string, error) {
+	return "", errors.New("TTY is not supported on this platform")
+}
+
+// PrintRawBytes for debugging raw byte sequences
+func (tty *TTY) PrintRawBytes() {
+	fmt.Println("TTY is not supported on this platform")
+}
+
+// ASCII returns the ASCII code of the key pressed
+func (tty *TTY) ASCII() int { return 0 }
+
+// KeyCode returns the key code of the key pressed
+func (tty *TTY) KeyCode() int { return 0 }
+
+// WaitForKey waits for a key press (stub)
+func WaitForKey() {}

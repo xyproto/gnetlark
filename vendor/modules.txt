@@ -21,24 +21,20 @@ github.com/panjf2000/gnet/v2/pkg/pool/goroutine
 github.com/panjf2000/gnet/v2/pkg/pool/ringbuffer
 github.com/panjf2000/gnet/v2/pkg/queue
 github.com/panjf2000/gnet/v2/pkg/socket
-# github.com/pkg/term v1.2.0-beta.2.0.20210419004637-f749b98bd0ba
-## explicit; go 1.14
-github.com/pkg/term
-github.com/pkg/term/termios
 # github.com/valyala/bytebufferpool v1.0.0
 ## explicit
 github.com/valyala/bytebufferpool
 # github.com/xyproto/burnfont v1.2.3
 ## explicit; go 1.9
 github.com/xyproto/burnfont
-# github.com/xyproto/env/v2 v2.5.3
+# github.com/xyproto/env/v2 v2.5.6
 ## explicit; go 1.19
 github.com/xyproto/env/v2
-# github.com/xyproto/vt v1.2.9
-## explicit; go 1.24.4
+# github.com/xyproto/vt v1.9.12
+## explicit; go 1.25.1
 github.com/xyproto/vt
-# go.starlark.net v0.0.0-20250826212936-2a4f36945129
-## explicit; go 1.19
+# go.starlark.net v0.0.0-20260613233743-8ba36ccb83fb
+## explicit; go 1.25.0
 go.starlark.net/internal/compile
 go.starlark.net/internal/spell
 go.starlark.net/resolve
@@ -61,13 +57,13 @@ go.uber.org/zap/zapcore
 # golang.org/x/sync v0.16.0
 ## explicit; go 1.23.0
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.35.0
-## explicit; go 1.23.0
+# golang.org/x/sys v0.46.0
+## explicit; go 1.25.0
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/term v0.34.0
-## explicit; go 1.23.0
+# golang.org/x/term v0.44.0
+## explicit; go 1.25.0
 golang.org/x/term
 # gopkg.in/natefinch/lumberjack.v2 v2.2.1
 ## explicit; go 1.13
