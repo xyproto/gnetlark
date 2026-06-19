@@ -1,8 +1,8 @@
-# github.com/panjf2000/ants/v2 v2.11.3
-## explicit; go 1.18
+# github.com/panjf2000/ants/v2 v2.12.1
+## explicit; go 1.19
 github.com/panjf2000/ants/v2
 github.com/panjf2000/ants/v2/pkg/sync
-# github.com/panjf2000/gnet/v2 v2.9.3
+# github.com/panjf2000/gnet/v2 v2.9.8
 ## explicit; go 1.20
 github.com/panjf2000/gnet/v2
 github.com/panjf2000/gnet/v2/internal/gfd
@@ -43,7 +43,7 @@ go.starlark.net/syntax
 # go.uber.org/multierr v1.11.0
 ## explicit; go 1.19
 go.uber.org/multierr
-# go.uber.org/zap v1.27.0
+# go.uber.org/zap v1.28.0
 ## explicit; go 1.19
 go.uber.org/zap
 go.uber.org/zap/buffer
@@ -54,8 +54,8 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
-# golang.org/x/sync v0.16.0
-## explicit; go 1.23.0
+# golang.org/x/sync v0.21.0
+## explicit; go 1.25.0
 golang.org/x/sync/errgroup
 # golang.org/x/sys v0.46.0
 ## explicit; go 1.25.0

@@ -210,7 +210,7 @@ func (cli *Client) EnrollContext(c net.Conn, ctx any) (Conn, error) {
 
 	var dupFD int
 	e := rc.Control(func(fd uintptr) {
-		dupFD, err = unix.Dup(int(fd))
+		dupFD, err = socket.Dup(int(fd))
 	})
 	if err != nil {
 		return nil, err

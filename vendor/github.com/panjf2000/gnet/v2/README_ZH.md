@@ -35,7 +35,7 @@
 
 # 🚀 功能
 
-## 🦖 当前支持
+## 🦖 里程碑
 
 - [x] 基于多线程/协程网络模型的[高性能](#-性能测试)事件驱动循环
 - [x] 内置 goroutine 池，由开源库 [ants](https://github.com/panjf2000/ants) 提供支持
@@ -51,7 +51,7 @@
 - [x] 多网络地址绑定
 - [x] 支持注册新的连接到事件循环
 
-## 🕊 未来计划
+## 🕊 蓝图
 
 - [ ] 支持 **TLS**
 - [ ] 支持 [io_uring](https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023)
@@ -164,9 +164,9 @@ go get -u github.com/panjf2000/gnet
 
 ## 同类型的网络库性能对比
 
-## On Linux (epoll)
+### On Linux (epoll)
 
-### Test Environment
+#### Environment
 
 ```bash
 # Machine information
@@ -184,15 +184,13 @@ Packet size     : 512/1024/2048/4096/8192/16384/32768/65536 bytes
 Test duration   : 15s
 ```
 
-#### [Echo benchmark](https://github.com/gnet-io/gnet-benchmarks)
+[![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_conn_linux.png)](https://github.com/gnet-io/gnet-benchmarks)
 
-![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_conn_linux.png)
+[![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_packet_linux.png)]((https://github.com/gnet-io/gnet-benchmarks))
 
-![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_packet_linux.png)
+### On MacOS (kqueue)
 
-## On MacOS (kqueue)
-
-### Test Environment
+#### Environment
 
 ```bash
 # Machine information
@@ -210,11 +208,13 @@ Packet size     : 512/1024/2048/4096/8192 bytes
 Test duration   : 15s
 ```
 
-#### [Echo benchmark](https://github.com/gnet-io/gnet-benchmarks)
+[![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_conn_macos.png)]((https://github.com/gnet-io/gnet-benchmarks))
 
-![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_conn_macos.png)
+[![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_packet_macos.png)]((https://github.com/gnet-io/gnet-benchmarks))
 
-![](https://github.com/panjf2000/gnet_benchmarks/raw/master/results/echo_packet_macos.png)
+### "硬刚" Rust
+
+[![](https://res.strikefreedom.top/static_res/blog/figures/Gjfx2GoXAAA5haW.jpeg)](https://www.youtube.com/watch?v=31R8Ef9A0iw)
 
 # ⚠️ 证书
 
@@ -270,8 +270,4 @@ Test duration   : 15s
 
 # 🔋 赞助商
 
-<p>
-  <h3>本项目由以下机构赞助：</h3>
-  <a href="https://www.digitalocean.com/"><img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" />
-  </a>
-</p>
+[![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%203.svg)](https://www.digitalocean.com/?refcode=5d8774f42124&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)

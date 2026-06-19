@@ -7,7 +7,7 @@
 <a title="Release" target="_blank" href="https://github.com/panjf2000/ants/releases"><img src="https://img.shields.io/github/v/release/panjf2000/ants.svg?color=161823&style=flat-square&logo=smartthings" /></a>
 <a title="Tag" target="_blank" href="https://github.com/panjf2000/ants/tags"><img src="https://img.shields.io/github/v/tag/panjf2000/ants?color=%23ff8936&logo=fitbit&style=flat-square" /></a>
 <br/>
-<a title="Minimum Go Version" target="_blank" href="https://github.com/panjf2000/gnet"><img src="https://img.shields.io/badge/go-%3E%3D1.18-30dff3?style=flat-square&logo=go" /></a>
+<a title="Minimum Go Version" target="_blank" href="https://github.com/panjf2000/gnet"><img src="https://img.shields.io/badge/go-%3E%3D1.19-30dff3?style=flat-square&logo=go" /></a>
 <a title="Go Report Card" target="_blank" href="https://goreportcard.com/report/github.com/panjf2000/ants"><img src="https://goreportcard.com/badge/github.com/panjf2000/ants?style=flat-square" /></a>
 <a title="Doc for ants" target="_blank" href="https://pkg.go.dev/github.com/panjf2000/ants/v2?tab=doc"><img src="https://img.shields.io/badge/go.dev-doc-007d9c?style=flat-square&logo=read-the-docs" /></a>
 <a title="Mentioned in Awesome Go" target="_blank" href="https://github.com/avelino/awesome-go#goroutines"><img src="https://awesome.re/mentioned-badge-flat.svg" /></a>
@@ -147,7 +147,7 @@ The source code in `ants` is available under the [MIT License](/LICENSE).
 
 ## 🖥 Use cases
 
-### business corporations
+### business corporations & open-source organizations
 
 Trusted by the following corporations/organizations.
 
@@ -215,7 +215,7 @@ Trusted by the following corporations/organizations.
       </td>
       <td align="center" valign="middle">
         <a href="https://www.matrixorigin.io/" target="_blank">
-          <img src="https://www.matrixorigin.io/_next/static/media/logo-light-en.42553c69.svg" width="250" />
+          <img src="https://www.matrixorigin.io/_next/static/media/logo-light-en.b8e29d17.svg" width="250" />
         </a>
       </td>
     </tr>
@@ -258,6 +258,18 @@ Trusted by the following corporations/organizations.
           <img src="https://res.strikefreedom.top/static_res/logos/amap-logo.png" width="250" />
         </a>
       </td>
+      <td align="center" valign="middle">
+        <a href="https://www.apache.org/" target="_blank">
+          <img src="https://res.strikefreedom.top/static_res/logos/asf-estd-1999-logo.jpg" width="250" />
+        </a>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" valign="middle">
+        <a href="https://www.coze.com/" target="_blank">
+          <img src="https://res.strikefreedom.top/static_res/logos/coze-logo.png" width="250" />
+        </a>
+      </td>
     </tr>
   </tbody>
 </table>
@@ -273,6 +285,9 @@ The open-source projects below do concurrent programming with the help of `ants`
 - [nps](https://github.com/ehang-io/nps): A lightweight, high-performance, powerful intranet penetration proxy server, with a powerful web management terminal.
 - [TDengine](https://github.com/taosdata/TDengine): TDengine is an open source, high-performance, cloud native time-series database optimized for Internet of Things (IoT), Connected Cars, and Industrial IoT.
 - [siyuan](https://github.com/siyuan-note/siyuan): SiYuan is a local-first personal knowledge management system that supports complete offline use, as well as end-to-end encrypted synchronization.
+- [BillionMail](https://github.com/aaPanel/BillionMail): A future open-source Mail server, Email marketing platform designed to help businesses and individuals manage their email campaigns with ease.
+- [WeKnora](https://github.com/Tencent/WeKnora): An LLM-powered framework designed for deep document understanding and semantic retrieval, especially for handling complex, heterogeneous documents.
+- [coze-loop](https://github.com/coze-dev/coze-loop): A developer-oriented, platform-level solution focused on the development and operation of AI agents.
 - [osmedeus](https://github.com/j3ssie/osmedeus): A Workflow Engine for Offensive Security.
 - [jitsu](https://github.com/jitsucom/jitsu/tree/master): An open-source Segment alternative. Fully-scriptable data ingestion engine for modern data teams. Set-up a real-time data pipeline in minutes, not days.
 - [triangula](https://github.com/RH12503/triangula): Generate high-quality triangulated and polygonal art from images.
@@ -304,30 +319,32 @@ If you have `ants` integrated into projects, feel free to open a pull request re
 
 <a href="https://www.jetbrains.com/?from=ants" target="_blank"><img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg" alt="JetBrains logo."></a>
 
-## 💰 Backers
-
-Support us with a monthly donation and help us continue our activities.
-
-<a href="https://opencollective.com/ants#backers" target="_blank"><img src="https://opencollective.com/ants/backers.svg"></a>
-
-## 💎 Sponsors
-
-Become a bronze sponsor with a monthly donation of $10 and get your logo on our README on GitHub.
-
-<a href="https://opencollective.com/ants#sponsors" target="_blank"><img src="https://opencollective.com/ants/sponsors.svg"></a>
-
 ## ☕️ Buy me a coffee
 
 > Please be sure to leave your name, GitHub account, or other social media accounts when you donate by the following means so that I can add it to the list of donors as a token of my appreciation.
 
-<img src="https://raw.githubusercontent.com/panjf2000/illustrations/master/payments/WeChatPay.JPG" width="250" align="middle"/>&nbsp;&nbsp;
-<img src="https://raw.githubusercontent.com/panjf2000/illustrations/master/payments/AliPay.JPG" width="250" align="middle"/>&nbsp;&nbsp;
-<a href="https://www.paypal.me/R136a1X" target="_blank"><img src="https://raw.githubusercontent.com/panjf2000/illustrations/master/payments/PayPal.JPG" width="250" align="middle"/></a>&nbsp;&nbsp;
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="middle">
+        <a target="_blank" href="https://buymeacoffee.com/panjf2000">
+          <img src="https://res.strikefreedom.top/static_res/logos/bmc_qr.png" width="250" alt="Buy me a coffee" />
+        </a>
+      </td>
+      <td align="center" valign="middle">
+        <a target="_blank" href="https://www.patreon.com/panjf2000">
+          <img src="https://res.strikefreedom.top/static_res/logos/patreon_logo.png" width="250" alt="Patreon" />
+        </a>
+      </td>
+      <td align="center" valign="middle">
+        <a target="_blank" href="https://opencollective.com/panjf2000">
+          <img src="https://res.strikefreedom.top/static_res/logos/open-collective-logo.png" width="250" alt="OpenCollective" />
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 ## 🔋 Sponsorship
 
-<p>
-  <a href="https://www.digitalocean.com/">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/PoweredByDO/DO_Powered_by_Badge_blue.svg" width="201px">
-  </a>
-</p>
+[![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%203.svg)](https://www.digitalocean.com/?refcode=5d8774f42124&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
