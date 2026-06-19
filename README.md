@@ -66,6 +66,6 @@ The "Hello World" page can be served by a command like this:
 
 ## General info
 
-* Version: 1.0.3
+* Version: 1.0.4
 * Author: Alexander F. Rødseth &lt;xyproto@archlinux.org&gt;
 * License: BSD-3
